@@ -11,11 +11,11 @@ i.e. the number of MIDI clock events per pulse.
 The MIDI Clock is presumed to be 24 ppqn (pulse per quarter note).
 Position of the potentiometer 
 - 0 (fully CCW) = 1/4: a pulse is sent every 96 MIDI Clock message received
-~ 1.5 = 1/3: a pulse is sent every 72 MIDI Clock message received
-~ 3 = 1/2: a pulse is sent every 48 MIDI Clock message received
+- ~ 1.5 = 1/3: a pulse is sent every 72 MIDI Clock message received
+- ~ 3 = 1/2: a pulse is sent every 48 MIDI Clock message received
 - 5 = 1: a pulse is sent every 24 MIDI Clock message received
-~ 7 = 2: a pulse is sent every 12 MIDI Clock message received
-~ 8.5 = 3: a pulse is sent every 8 MIDI Clock message received
+- ~ 7 = 2: a pulse is sent every 12 MIDI Clock message received
+- ~ 8.5 = 3: a pulse is sent every 8 MIDI Clock message received
 - 10 (fully CW) = 4: a pulse is sent every 6 MIDI Clock message received
 
 CLOCK PATTERN
