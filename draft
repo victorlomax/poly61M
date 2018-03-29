@@ -1,0 +1,65 @@
+ATTiny45
+PIC16F84
+                            _______
+                   RA2 => (|1    18|) <= RA1
+                   RA3 => (|2    17|) <= RA0
+                   RA4 => (|3    16|) <= OCS1	4 MHz XTAL1
+                 /MCLR => (|4    15|) <= OCS2	4 MHz XTAL2
+                   +5V => (|5    14|) <= GND
+                   RB0 <= (|6    13|) <= RB7
+                   RB1 => (|7    12|) <= RB6 
+                   RB2 => (|8    11|) <= RB5
+                   RB3 => (|9    10|) <= RB4
+                            \_____/
+
+RA0 (input)	Speed Potentiometer
+RA1 (input)	MIDI In
+RA2
+RA3
+RB0 (output)	Arpeggio Clock Out
+RB1 (output)	Bypass arpeggio internal clock
+RB2 (output)	Bypass arpeggio external clock
+RB3 (output)	Bypass arpeggio switch
+RB4
+RB5
+RB6
+RB7
+
+
+MIDI clock (decimal 248, hex 0xF8)
+MIDI start (decimal 250, hex 0xFA)
+MIDI continue (decimal 251, hex 0xFB)
+MIDI stop (decimal 252, hex 0xFC)
+
+#define	STEP	RB1
+#define	SWITCH	RB3
+
+int	ppqn=48,
+	pulse=0;
+Loop
+   If (suspend=false && DetectFallEdge(MIDI IN))
+	byte=0
+	Wait(64 cycles)
+	for 1 to 8
+		Wait(128 cycles)
+		input=Strobe(MIDI IN) & 0x01;
+		byte=byte << 1;
+		byte=byte | input;
+	end for
+	suspend=true;
+   end if
+   If (DetectRiseEdge(MIDI IN))
+	suspend=false;
+   end if
+   if (suspend=false)
+	switch(byte)
+		case 0xFA:	// Start
+		case 0xFB:	// Continue
+			Digital_write(SWITCH, HIGH);
+		case 0xFC:	// Stop
+			Digital_write(SWITCH, LOW);
+		case 0xF8:	// Step
+			Digital_write(STEP, HIGH);
+	end switch
+   end if
+End loop
