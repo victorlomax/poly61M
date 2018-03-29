@@ -23,12 +23,12 @@ CLOCK PATTERN
 Up the 16 clock patterns can be set (tbc)...
 
 Control SYSEX (in hex):
-F0 42 30 7F 00 00 F7 : Fully manual mode. User must press the Arpeggiator button to start the arpeggiator. 
-F0 42 30 7F 00 01 F7 : The arpeggiator starts and stops on received MIDI Start (0xFA) and Stop (0xFC) events.
-F0 42 30 7F 00 02 F7 : The arpeggiator automatically starts on first MIDI clock (0xF8) and stops after 4 missing clock.
-F0 42 30 7F 01 00 F7 : Select clock pattern 0
-...
-F0 42 30 7F 01 0F F7 : Select clock pattern 15
-F0 42 30 7F 10 -- -- -- F7 : Set clock pattern 0
-...
-F0 42 30 7F 1F -- -- -- F7 : Set clock pattern 15
+- F0 42 30 7F 00 00 F7 : Fully manual mode. User must press the Arpeggiator button to start the arpeggiator. 
+- F0 42 30 7F 00 01 F7 : The arpeggiator starts and stops on received MIDI Start (0xFA) and Stop (0xFC) events.
+- F0 42 30 7F 00 02 F7 : The arpeggiator automatically starts on first MIDI clock (0xF8) and stops after 4 missing clock.
+- F0 42 30 7F 01 00 F7 : Select clock pattern 0
+- ...
+- F0 42 30 7F 01 0F F7 : Select clock pattern 15
+- F0 42 30 7F 10 -- -- -- F7 : Set clock pattern 0
+- ...
+- F0 42 30 7F 1F -- -- -- F7 : Set clock pattern 15
