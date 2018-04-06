@@ -1,0 +1,2115 @@
+0001   0000             	;	Disassembled by:
+0002   0000             	;		DASMx object code disassembler
+0003   0000             	;		(c) Copyright 1996-2003   Conquest Consultants
+0004   0000             	;		Version 1.40 (Oct 18 2003)
+0005   0000             	;
+0006   0000             	;	File:		dumpp61a.bin (Korg 8049 C 337 MCU)
+0007   0000             	;	Size:		2048 bytes
+0008   0000             	;	Checksum:	8A68
+0009   0000             	;
+0010   0000             	;	Date:		Tue Sep 06 20:54:43 2016
+0011   0000             	;	CPU:		Intel 8049 (MCS-48 family)
+0012   0000             
+0013   0000             ;tasm -48 -g3 p61prog.asm p61prog.bin
+0014   0000             ; g0 is Intel Hex
+0015   0000             ; g3 selects binary
+0016   0000             
+0017   0000             ; 9/6 Initial disassembly
+0018   0000             ; 9/9 Got the code running in Aldec simulator.   Just the 8255's EPROM, RAM, and switches.
+0019   0000             
+0020   0000             ;RAM usage: (128 bytes)
+0021   0000             
+0022   0000             rb0r0	.equ	00h
+0023   0000             rb0r1	.equ	01h
+0024   0000             rb0r2	.equ	02h
+0025   0000             rb0r3	.equ	03h
+0026   0000             rb0r4	.equ	04h
+0027   0000             rb0r5	.equ	05h
+0028   0000             rb0r6	.equ	06h
+0029   0000             rb0r7	.equ	07h
+0030   0000             
+0031   0000             rb1r0	.equ	08h
+0032   0000             rb1r1	.equ	09h
+0033   0000             rb1r2	.equ	0Ah
+0034   0000             rb1r3	.equ	0Bh
+0035   0000             rb1r4	.equ	0Ch
+0036   0000             rb1r5	.equ	0Dh		;holds interval between DCO's, values were -3:4E(78dec),3:50(80dec),4:52(82dec)
+0037   0000             				;values are doubled, since this is divider table offset, so -3:39,3:40,4:41
+0038   0000             				;seems to reflect octave setting as well. -3 is minor third, 3 is major third, and 4 is perfect 4th
+0039   0000             rb1r6	.equ	0Eh
+0040   0000             rb1r7	.equ	0Fh
+0041   0000             
+0042   0000             numval	.equ	024h		;when a new prog or parm # is being entered, it is assembled here
+0043   0000             flags1	.equ	025h		;D0 set when left digit of prog or parm already entered	
+0044   0000             				;D1 set when right digit of prog already entered
+0045   0000             				;D2 set when we select a new parameter	
+0046   0000             				;D4 set when write, prog, or parm sw pressed
+0047   0000             
+0048   0000             curprog	.equ	027h		;number of current program, 
+0049   0000             curparm	.equ	028h		;number of current parameter, in binary 11 is 0, 21 is 4, etc
+0050   0000             parmadd	.equ	029h		;points to byte that holds current parm in temp buf (54 for res)
+0051   0000             parmin1	.equ	02Bh		;top two bits of first table byte, has to do with how value changes
+0052   0000             parmin2 .equ	02Ch		;upper nibble+1 of second table byte is stored here
+0053   0000             				;this is right shift count+1 needed to right justify parm in byte
+0054   0000             parmin3	.equ	02Dh		;F4 table value for each parm stored here
+0055   0000             				;this is a bit mask for the parm bits, after right shifting
+0056   0000             
+0057   0000             pbuf0	.equ	040h		;8-byte patch buffer
+0058   0000             pbuf1	.equ	041h		;for currently selected patch
+0059   0000             pbuf2	.equ	042h
+0060   0000             pbuf3	.equ	043h
+0061   0000             pbuf4	.equ	044h
+0062   0000             pbuf5	.equ	045h
+0063   0000             pbuf6	.equ	046h
+0064   0000             pbuf7	.equ	047h
+0065   0000             				;IC42 bits:
+0066   0000             tmpbuf0	.equ	050h		;these bits are written to the hw at the same address (8255 regs)
+0067   0000             tmpbuf1	.equ	051h		;when we change a parm, bits in this area change, not in patch buffer
+0068   0000             tmpbuf2	.equ	052h		;cutoff in D7:2
+0069   0000             tmpbuf3	.equ	053h		;not used, since this addr is control reg in 8255
+0070   0000             
+0071   0000             				;IC28 bits
+0072   0000             tmpbuf4	.equ	054h		;resonance in D3:1
+0073   0000             tmpbuf5	.equ	055h
+0074   0000             tmpbuf6	.equ	056h
+0075   0000             tmpbuf7	.equ	057h		;not used, since this addr is control reg in 8255
+0076   0000             
+0077   0000             				;IC22 bits
+0078   0000             tmpbuf8	.equ	058h		
+0079   0000             intval	.equ	059h		;related to value of interval parameter
+0080   0000             				;when sel parm was #23, -3 had 1, 3 had 2, and 4 had 3 here
+0081   0000             
+0082   0000             				;display buffer, these contain LED segment bits:
+0083   0000             value1	.equ	05Bh		;value display LSdigit storage, D7 controls EDIT LED		
+0084   0000             value10	.equ	05Ch		;value display MSdigit storage		
+0085   0000             parm1	.equ	05Dh		;parameter display LSdigit storage		
+0086   0000             parm10	.equ	05Eh		;parameter display MSdigit storage		
+0087   0000             prog1	.equ	05Fh		;program display LSdigit storage		
+0088   0000             prog10	.equ	060h		;program display MSdigit storage
+0089   0000             
+0090   0000             y0swdn	.equ	063h		;row 0 sw down flags (1= sw is down)
+0091   0000             y1swdn	.equ	064h		;row 1 sw down flags
+0092   0000             y0flags	.equ	065h		;possibly flags for new sw presses in row Y0 (number switches)		
+0093   0000             y1flags	.equ	066h		;possibly flags for new sw presses in row Y1		
+0094   0000             
+0095   0000             
+0096   0000             	.org	00000H
+0097   0000             
+0098   0000 15          	dis	i		;reset starts executing here
+0099   0001             L0001:
+0100   0001 E4 75       	jmp	L0775
+0101   0003             
+0102   0003             
+0103   0003             ;L0003:				;we jump here on external interrupt
+0104   0003 24 37       	jmp	L0137
+0105   0005             
+0106   0005             
+0107   0005             L0005:
+0108   0005 A3          	movp	a,@a		;read page 0 table byte at addr in acc
+0109   0006 83          	ret
+0110   0007             
+0111   0007             L0007:				;we jump here on timer/counter interrupt
+0112   0007 15          	dis	i
+0113   0008 04 FC       	jmp	L00FC
+0114   000A             
+0115   000A             
+0116   000A             L000A:				;this seems like main code loop
+0117   000A 27          	clr	a
+0118   000B D7          	mov	psw,a
+0119   000C B8 25       	mov	r0,#025H	;flags?
+0120   000E             L000E:
+0121   000E F0          	mov	a,@r0
+0122   000F F2 13       	jb7	L0013
+0123   0011 04 0E       	jmp	L000E
+0124   0013             
+0125   0013             L0013:
+0126   0013 53 7F       	anl	a,#07FH
+0127   0015 A0          	mov	@r0,a
+0128   0016             L0016:
+0129   0016 54 DA       	call	L02DA
+0130   0018 94 1B       	call	L041B
+0131   001A             L001A:
+0132   001A B8 26       	mov	r0,#026H
+0133   001C F0          	mov	a,@r0
+0134   001D             L001D:
+0135   001D 12 36       	jb0	L0036		;handle addr 26 action flags in order lsbit to msbit
+0136   001F 32 3C       	jb1	L003C
+0137   0021 52 42       	jb2	L0042
+0138   0023 72 48       	jb3	L0048
+0139   0025 92 4E       	jb4	L004E
+0140   0027 B2 54       	jb5	L0054
+0141   0029 D2 5A       	jb6	L005A
+0142   002B F2 60       	jb7	L0060
+0143   002D             
+0144   002D 09          	in	a,p1
+0145   002E B2 32       	jb5	L0032
+0146   0030 24 90       	jmp	L0190
+0147   0032             
+0148   0032             L0032:
+0149   0032 F4 1E       	call	L071E
+0150   0034 04 0A       	jmp	L000A		;back to start of loop
+0151   0036             
+0152   0036             
+0153   0036             L0036:
+0154   0036 B4 22       	call	L0522	
+0155   0038 23 FE       	mov	a,#0FEH		;mask to clear D0 bit
+0156   003A             L003A:
+0157   003A 04 64       	jmp	L0064
+0158   003C             
+0159   003C             
+0160   003C             L003C:
+0161   003C B4 3F       	call	L053F	
+0162   003E             L003E:
+0163   003E 23 FD       	mov	a,#0FDH		;mask to clear D1 bit
+0164   0040 04 64       	jmp	L0064
+0165   0042             
+0166   0042             
+0167   0042             L0042:			
+0168   0042 74 06       	call	L0306		;write current prog number to display
+0169   0044             L0044:
+0170   0044 23 FB       	mov	a,#0FBH		;mask to clear D2 bit
+0171   0046 04 64       	jmp	L0064
+0172   0048             
+0173   0048             
+0174   0048             L0048:			
+0175   0048 74 18       	call	L0318		;write current parm number to display
+0176   004A 23 F7       	mov	a,#0F7H		;mask to clear D3 bit
+0177   004C 04 64       	jmp	L0064
+0178   004E             
+0179   004E             
+0180   004E             L004E:
+0181   004E F4 14       	call	L0714	
+0182   0050             L0050:
+0183   0050 23 EF       	mov	a,#0EFH		;mask to clear D4 bit
+0184   0052 04 64       	jmp	L0064
+0185   0054             
+0186   0054             L0054:
+0187   0054 D4 F0       	call	L06F0	
+0188   0056 23 DF       	mov	a,#0DFH		;mask to clear D5 bit
+0189   0058 04 64       	jmp	L0064
+0190   005A             
+0191   005A             L005A:
+0192   005A D4 5C       	call	L065C	
+0193   005C 23 BF       	mov	a,#0BFH		;mask to clear D6 bit
+0194   005E 04 64       	jmp	L0064
+0195   0060             
+0196   0060             L0060:
+0197   0060 F4 00       	call	L0700		;update Edit LED based on current parm value in tmp buf and value in patch buf
+0198   0062 23 7F       	mov	a,#07FH		;mask to clear D7 bit
+0199   0064             L0064:
+0200   0064 B8 26       	mov	r0,#026H
+0201   0066 50          	anl	a,@r0		;clear sw flag we acted on
+0202   0067 A0          	mov	@r0,a		;update sw states
+0203   0068 04 1D       	jmp	L001D
+0204   006A             
+0205   006A             
+0206   006A             ;L006A:
+0207   006A 45          	.db	$45
+0208   006B 49          	.db	$49
+0209   006C 5A          	.db	$5A
+0210   006D 49          	.db	$49
+0211   006E             ;L006E:
+0212   006E 32          	.db	$32
+0213   006F 16          	.db	$16
+0214   0070 08          	.db	$08
+0215   0071 04          	.db	$04
+0216   0072 02          	.db	$02
+0217   0073 01          	.db	$01
+0218   0074             
+0219   0074             ;L0074:				;a table of masks
+0220   0074 FE          	.db	$FE		;just D0 low
+0221   0075 FD          	.db	$FD		;just D1 low
+0222   0076 FB          	.db	$FB		;just D2 low
+0223   0077 F7          	.db	$F7		;just D3 low
+0224   0078 EF          	.db	$EF		;just D4 low
+0225   0079 DF          	.db	$DF		;just D5 low
+0226   007A             
+0227   007A             ;L007A:
+0228   007A             
+0229   007A             SegsTab:   ;	 gfedcba	;segment patterns for 0-9
+0230   007A 3F          	.db	00111111b	;$3F  0
+0231   007B 06          	.db	00000110b	;$06  1
+0232   007C 5B          	.db	01011011b	;$5B  2
+0233   007D 4F          	.db	01001111b	;$4F  3
+0234   007E 66          	.db	01100110b	;$66  4
+0235   007F 6D          	.db	01101101b	;$6D  5
+0236   0080 7D          	.db	01111101b	;$7D  6
+0237   0081 07          	.db	00000111b	;$07  7
+0238   0082 7F          	.db	01111111b	;$7F  8
+0239   0083 6F          	.db	01101111b	;$6F  9
+0240   0084             
+0241   0084             
+0242   0084             ;L0084:			;a bunch of tables of various sizes
+0243   0084 7D          	.db	$7D
+0244   0085 06          	.db	$06
+0245   0086 7F          	.db	$7F
+0246   0087 00          	.db	$00
+0247   0088             
+0248   0088             ;L0088:			;12-byte table
+0249   0088 66          	.db	$66
+0250   0089 00          	.db	$00
+0251   008A 08          	.db	$08
+0252   008B 00          	.db	$00
+0253   008C 06          	.db	$06
+0254   008D 4F          	.db	$4F
+0255   008E 4F          	.db	$4F
+0256   008F 66          	.db	$66
+0257   0090 6D          	.db	$6D
+0258   0091 08          	.db	$08
+0259   0092 08          	.db	$08
+0260   0093 08          	.db	$08
+0261   0094             
+0262   0094             ;L0094:			;4-byte table
+0263   0094 01          	.db	$01
+0264   0095 00          	.db	$00
+0265   0096 02          	.db	$02
+0266   0097 01          	.db	$01
+0267   0098             
+0268   0098             ;L0098:			;20-byte table
+0269   0098 48          	.db	$48
+0270   0099 30          	.db	$30
+0271   009A 18          	.db	$18
+0272   009B 30          	.db	$30
+0273   009C 4E          	.db	$4E
+0274   009D 36          	.db	$36
+0275   009E 1E          	.db	$1E
+0276   009F 36          	.db	$36
+0277   00A0 50          	.db	$50
+0278   00A1 38          	.db	$38
+0279   00A2 20          	.db	$20
+0280   00A3 38          	.db	$38
+0281   00A4 52          	.db	$52
+0282   00A5 3A          	.db	$3A
+0283   00A6 22          	.db	$22
+0284   00A7 3A          	.db	$3A	
+0285   00A8 56          	.db	$56
+0286   00A9 3E          	.db	$3E
+0287   00AA 26          	.db	$26
+0288   00AB 3E          	.db	$3E
+0289   00AC             
+0290   00AC             ;L00AC:			;16-byte table
+0291   00AC 0E          	.db	$0E
+0292   00AD 0E          	.db	$0E
+0293   00AE 0E          	.db	$0E
+0294   00AF 0E          	.db	$0E
+0295   00B0 0F          	.db	$0F
+0296   00B1 07          	.db	$07
+0297   00B2 03          	.db	$03
+0298   00B3 0E          	.db	$0E
+0299   00B4 08          	.db	$08
+0300   00B5 04          	.db	$04
+0301   00B6 02          	.db	$02
+0302   00B7 0E          	.db	$0E
+0303   00B8 0E          	.db	$0E
+0304   00B9 0E          	.db	$0E
+0305   00BA 0E          	.db	$0E
+0306   00BB 0E          	.db	$0E
+0307   00BC             
+0308   00BC             
+0309   00BC             	;top 2 bits of first byte are either 
+0310   00BC             	;01 (incrementing parm)
+0311   00BC             	;10 (octave parm)
+0312   00BC             	;11 (interval parm)
+0313   00BC             
+0314   00BC             	;low nibble of first byte is index into tmp buf/hw 
+0315   00BC             	;starting at 0x50 to access this parm's bits
+0316   00BC             	;so for instance VCF cutoff has 2, which maps to 
+0317   00BC             	;RAM and hw address 0x52, which is 8255 IC42 PortC
+0318   00BC             	;3 is a special case, since there is no port at addr 53
+0319   00BC             
+0320   00BC             	;upper nibble of second byte is shift count to right-justify parm
+0321   00BC             	;in both hw and in RAM buffers
+0322   00BC             
+0323   00BC             ;L00BC:
+0324   00BC A0          	.db	$A0	;11 DCO1 octave                 F4 tab   EC tab
+0325   00BD 31          	.db	$31	;11                un+1=4, ln=1->3         2
+0326   00BE             
+0327   00BE 53          	.db	$53	;12 DCO1 waveform       
+0328   00BF 41          	.db	$41	;12                     5     1->3         2
+0329   00C0             
+0330   00C0 40          	.db	$40	;13 DCO1 PW                  
+0331   00C1 53          	.db	$53	;13                     6     3->7         7
+0332   00C2             
+0333   00C2 00          	.db	$00	;14 
+0334   00C3 00          	.db	$00	;14
+0335   00C4             
+0336   00C4 B3          	.db	$B3	;21 DCO2 octave              
+0337   00C5 01          	.db	$01	;21                     1     1->3         2
+0338   00C6             
+0339   00C6 73          	.db	$73	;22 DCO2 waveform            
+0340   00C7 21          	.db	$21	;22                     3     1->3         2
+0341   00C8             
+0342   00C8 E9          	.db	$E9	;23 DCO2 interval            
+0343   00C9 07          	.db	$07	;23                     1     7->7         4
+0344   00CA             
+0345   00CA 40          	.db	$40	;24 DCO2 detune               
+0346   00CB 06          	.db	$06	;24                     1     6->7         5
+0347   00CC             
+0348   00CC 42          	.db	$42	;31 VCF cutoff               
+0349   00CD 25          	.db	$25	;31                     3     5->3F       3F
+0350   00CE             
+0351   00CE 44          	.db	$44	;32 VCF resonance            
+0352   00CF 13          	.db	$13	;32                     2     3->7         7
+0353   00D0             
+0354   00D0 41          	.db	$41	;33 VCF tracking             
+0355   00D1 70          	.db	$70	;33                     8     0->1         1
+0356   00D2             
+0357   00D2 41          	.db	$41	;34 VCF EG int               
+0358   00D3 43          	.db	$43	;34                     5     3->7         7
+0359   00D4             
+0360   00D4 44          	.db	$44	;41 EG attack                
+0361   00D5 44          	.db	$44	;41                     5     4->F         F
+0362   00D6             
+0363   00D6 45          	.db	$45	;42 EG decay                  
+0364   00D7 04          	.db	$04	;42                     1     4->F         F
+0365   00D8             
+0366   00D8 45          	.db	$45	;43 EG sustain               
+0367   00D9 44          	.db	$44	;43                     5     4->F         F
+0368   00DA             
+0369   00DA 46          	.db	$46	;44 EG release               
+0370   00DB 04          	.db	$04	;44                     5     4->F         F
+0371   00DC             
+0372   00DC 44          	.db	$44	;51 VCA EG mode              
+0373   00DD 00          	.db	$00	;51                     1     1->3         2
+0374   00DE             
+0375   00DE 00          	.db	$00	;52 
+0376   00DF 00          	.db	$00	;52
+0377   00E0             
+0378   00E0 00          	.db	$00	;53
+0379   00E1 00          	.db	$00	;53
+0380   00E2             
+0381   00E2 00          	.db	$00	;54
+0382   00E3 00          	.db	$00	;54
+0383   00E4             
+0384   00E4 46          	.db	$46	;61 MG freq                 
+0385   00E5 44          	.db	$44	;61                     7     4->F         F
+0386   00E6             
+0387   00E6 48          	.db	$48	;62 MG delay                
+0388   00E7 02          	.db	$02	;62                     7     2->3         3
+0389   00E8             
+0390   00E8 48          	.db	$48	;63 MG DCO amt              
+0391   00E9 23          	.db	$23	;63                     7     3->7         7
+0392   00EA             
+0393   00EA 48          	.db	$48	;64 MG VCF amt              
+0394   00EB 53          	.db	$53	;64                     7     3->7         7
+0395   00EC             
+0396   00EC             
+0397   00EC             ;L00EC:			;table related to number of values for each parm?
+0398   00EC 01          	.db	$01	;0
+0399   00ED 02          	.db	$02	;1
+0400   00EE 03          	.db	$03	;2
+0401   00EF 07          	.db	$07	;3
+0402   00F0 0F          	.db	$0F	;4
+0403   00F1 3F          	.db	$3F	;5
+0404   00F2 05          	.db	$05	;6
+0405   00F3 04          	.db	$04	;7
+0406   00F4             
+0407   00F4             
+0408   00F4             			;table of bit masks for parameters, applied after parm is right-justified
+0409   00F4             ;L00F4:			;accessed using low nibble of second byte of each param in BC table
+0410   00F4 01          	.db	$01	;0
+0411   00F5 03          	.db	$03	;1
+0412   00F6 03          	.db	$03	;2
+0413   00F7 07          	.db	$07	;3
+0414   00F8 0F          	.db	$0F	;4
+0415   00F9 3F          	.db	$3F	;5
+0416   00FA 07          	.db	$07	;6
+0417   00FB 07          	.db	$07	;7
+0418   00FC             
+0419   00FC             
+0420   00FC             
+0421   00FC             L00FC:				;Timer/ctr interrupt jumps here
+0422   00FC D5          	sel	rb1		;second register bank
+0423   00FD AA          	mov	r2,a		;save acc in r2		
+0424   00FE             
+0425   00FE 23 F3       	mov	a,#0F3H
+0426   0100 62          	mov	t,a		;write 0xF3 to the timer 
+0427   0101             
+0428   0101 0A          	in	a,p2
+0429   0102 AB          	mov	r3,a		;save current port 2 value in r3
+0430   0103             
+0431   0103 8A 7F       	orl	p2,#07FH	;set all port 2 bits except D7 (interrupt reset)
+0432   0105             				;this will disable xRAM and the I/O decoder
+0433   0105 34 0E       	call	L010E		;refreshing the display
+0434   0107             
+0435   0107 FB          	mov	a,r3		;get port 2 value that we saved
+0436   0108 43 07       	orl	a,#007H		;set the low 3 bits
+0437   010A 3A          	outl	p2,a		;and restore it (code we interrupted 
+0438   010B             				;may have set up something in port 2)
+0439   010B             
+0440   010B FA          	mov	a,r2		;restore acc from r2
+0441   010C 05          	en	i
+0442   010D 93          	retr
+0443   010E             
+0444   010E             
+0445   010E             
+0446   010E             L010E:				;refreshing the display
+0447   010E CF          	dec	r7		;r7 counts 5->0
+0448   010F FF          	mov	a,r7
+0449   0110 37          	cpl	a		;when it goes to 0xFF, this goes to 0
+0450   0111 F2 15       	jb7	L0115		;and we don't jump here
+0451   0113 BF 05       	mov	r7,#005H	;but set r7 to 5 instead
+0452   0115             L0115:
+0453   0115 B9 5A       	mov	r1,#05AH	;IC42 port C addr (com digit selects)
+0454   0117 9A BF       	anl	p2,#0BFH	;P26=0, enable IC11 decoder
+0455   0119 27          	clr	a
+0456   011A 37          	cpl	a
+0457   011B 91          	movx	@r1,a		;disable all coms first
+0458   011C             
+0459   011C 29          	xch	a,r1		;incr r1 value to 0x5B and add r7 to it
+0460   011D 17          	inc	a		;so r1 counts down from 0x60 to 0x5B (which is the display buffer)
+0461   011E 6F          	add	a,r7
+0462   011F 29          	xch	a,r1
+0463   0120             
+0464   0120 F1          	mov	a,@r1		;read from r1 addr in RAM (display data)
+0465   0121 B9 59       	mov	r1,#059H	;IC42 port B addr (seg data outputs)
+0466   0123 91          	movx	@r1,a
+0467   0124             
+0468   0124 B9 5A       	mov	r1,#05AH	;IC42 port C addr (com digit selects)
+0469   0126 FF          	mov	a,r7
+0470   0127 52 2B       	jb2	L012B
+0471   0129 24 2F       	jmp	L012F
+0472   012B             
+0473   012B             L012B:				;if r7 is 4 or 5
+0474   012B FE          	mov	a,r6
+0475   012C F2 34       	jb7	L0134		;if bit 7 of r6 set, leave coms disabled (maybe for flashing the prog display)
+0476   012E FF          	mov	a,r7		;otherwise, enable correct com for this data
+0477   012F             L012F:
+0478   012F 03 74       	add	a,#074H		;table of masks, 1 bit low, D0, then D1, etc
+0479   0131 14 05       	call	L0005		;read page 0 table byte at addr in acc
+0480   0133 91          	movx	@r1,a
+0481   0134             L0134:
+0482   0134 8A 40       	orl	p2,#040H	;P26=1, disable IC11 decoder
+0483   0136 83          	ret			;and Bob's your uncle!
+0484   0137             
+0485   0137             
+0486   0137             
+0487   0137             				;ext interrupt jumps here
+0488   0137             L0137:				;we read 3 bits from the other MCU
+0489   0137             				;for 6 of the 8 cases, we then read a note number
+0490   0137             				;and use it to program the DCO divider from the table			
+0491   0137 D5          	sel	rb1		;switch to reg bank 1	
+0492   0138 AA          	mov	r2,a		;save acc in r2
+0493   0139             
+0494   0139 0A          	in	a,p2
+0495   013A AB          	mov	r3,a		;save p2 state in r3
+0496   013B             
+0497   013B 53 07       	anl	a,#007H
+0498   013D A8          	mov	r0,a
+0499   013E 8A FF       	orl	p2,#0FFH
+0500   0140             
+0501   0140 03 43       	add	a,#043H
+0502   0142 B3          	jmpp	@a		;INFO: indirect jump
+0503   0143             
+0504   0143             L0143:				;same page jump table (just low 8 bits)
+0505   0143 4B          	.db	$4B		;0 probably voice 1 key assigner S&H update
+0506   0144 4B          	.db	$4B		;1
+0507   0145 4B          	.db	$4B		;2
+0508   0146 4F          	.db	$4F		;3
+0509   0147 4F          	.db	$4F		;4
+0510   0148 4F          	.db	$4F		;5
+0511   0149 7D          	.db	$7D		;6
+0512   014A 8C          	.db	$8C		;7
+0513   014B             
+0514   014B             ;L014B:
+0515   014B 23 20       	mov	a,#020H		;selects 8253 IC4
+0516   014D 24 51       	jmp	L0151
+0517   014F             
+0518   014F             ;L014F:
+0519   014F 23 21       	mov	a,#021H		;selects 8253 IC13
+0520   0151             L0151:
+0521   0151 68          	add	a,r0
+0522   0152 A8          	mov	r0,a		;r0 pts to DCO1 for this voice?
+0523   0153 03 08       	add	a,#008H
+0524   0155 A9          	mov	r1,a		;r1 pts to DCO2 for this voice?
+0525   0156             
+0526   0156 9A 7F       	anl	p2,#07FH	;enable data buffer between two data buses
+0527   0158 08          	ins	a,bus		;read other MCU's data bus to get note info
+0528   0159 8A FF       	orl	p2,#0FFH	;disable data buffer
+0529   015B 97          	clr	c
+0530   015C F7          	rlc	a		;shift note info left 1, since table is words
+0531   015D 03 31       	add	a,#031H		;then add 0x31 to it (offset of lsbyte of first table entry)
+0532   015F AC          	mov	r4,a
+0533   0160 9A BF       	anl	p2,#0BFH	;drop P26 to enable IC11 I/O decoder
+0534   0162 E3          	movp3	a,@a		;read LSbyte from divider table
+0535   0163 90          	movx	@r0,a		;send it to DCO1 8253
+0536   0164 FC          	mov	a,r4
+0537   0165 07          	dec	a
+0538   0166 E3          	movp3	a,@a		;read MSbyte from divider table
+0539   0167 90          	movx	@r0,a		;send it to DCO1 8253
+0540   0168 FC          	mov	a,r4
+0541   0169 6D          	add	a,r5		;r5 related to interval between DCO's?
+0542   016A E6 70       	jnc	L0170
+0543   016C             L016C:
+0544   016C 03 E8       	add	a,#0E8H		;add -24dec, or one octave, in case of overflow
+0545   016E F6 6C       	jc	L016C
+0546   0170             L0170:
+0547   0170 AC          	mov	r4,a
+0548   0171 E3          	movp3	a,@a		;read LSbyte from divider table
+0549   0172 91          	movx	@r1,a		;send it to DCO2 8253
+0550   0173 FC          	mov	a,r4
+0551   0174 07          	dec	a
+0552   0175 E3          	movp3	a,@a		;read MSbyte from divider table
+0553   0176 91          	movx	@r1,a		;send it to DCO2 8253
+0554   0177             L0177:
+0555   0177 FB          	mov	a,r3
+0556   0178 43 07       	orl	a,#007H
+0557   017A 3A          	outl	p2,a		;restore saved p2 from r3, with low 3 bits set
+0558   017B FA          	mov	a,r2		;restore saved acc from r2
+0559   017C 93          	retr			;return with PSW restore
+0560   017D             
+0561   017D             
+0562   017D             ;L017D:				;in jump table at 143 for code 6
+0563   017D 1E          	inc	r6
+0564   017E FE          	mov	a,r6
+0565   017F 32 83       	jb1	L0183
+0566   0181 24 8C       	jmp	L018C
+0567   0183             
+0568   0183             L0183:
+0569   0183 53 80       	anl	a,#080H
+0570   0185 AE          	mov	r6,a
+0571   0186             
+0572   0186 B8 25       	mov	r0,#025H	;set bit 7 at RAM addr 0x25
+0573   0188 23 80       	mov	a,#080H
+0574   018A 40          	orl	a,@r0
+0575   018B A0          	mov	@r0,a
+0576   018C             
+0577   018C             L018C:				;in jump table at 143 for code 7
+0578   018C 9A 7F       	anl	p2,#07FH	;reset interrupt ff
+0579   018E 24 77       	jmp	L0177
+0580   0190             
+0581   0190             
+0582   0190             
+0583   0190             L0190:				;looks like tape code
+0584   0190 35          	dis	tcnti
+0585   0191 15          	dis	i
+0586   0192 99 00       	anl	p1,#000H
+0587   0194             L0194:
+0588   0194 23 E4       	mov	a,#0E4H		;point to "TAPE" message
+0589   0196 F4 D3       	call	L07D3		;displays 4 chars at pg7 addr in acc
+0590   0198             
+0591   0198 27          	clr	a
+0592   0199 D7          	mov	psw,a
+0593   019A             L019A:
+0594   019A B8 64       	mov	r0,#064H
+0595   019C 97          	clr	c
+0596   019D 00          	nop
+0597   019E 85          	clr	f0
+0598   019F 54 82       	call	L0282
+0599   01A1 37          	cpl	a
+0600   01A2 12 AA       	jb0	L01AA
+0601   01A4 52 D5       	jb2	L01D5
+0602   01A6 32 AC       	jb1	L01AC
+0603   01A8 24 9A       	jmp	L019A
+0604   01AA             L01AA:
+0605   01AA 44 AC       	jmp	L02AC
+0606   01AC             
+0607   01AC             L01AC:
+0608   01AC 95          	cpl	f0
+0609   01AD 54 1E       	call	L021E
+0610   01AF             
+0611   01AF 23 F0       	mov	a,#0F0H		;point to "LOAD"
+0612   01B1 F4 D3       	call	L07D3		;displays 4 chars at pg7 addr in acc
+0613   01B3             
+0614   01B3 54 9F       	call	L029F
+0615   01B5 94 00       	call	L0400
+0616   01B7 24 BB       	jmp	L01BB
+0617   01B9             
+0618   01B9             L01B9:
+0619   01B9 89 02       	orl	p1,#002H	;set P11 (xRAM A9)
+0620   01BB             L01BB:
+0621   01BB BE 00       	mov	r6,#000H
+0622   01BD B9 00       	mov	r1,#000H
+0623   01BF             L01BF:
+0624   01BF 34 FC       	call	L01FC
+0625   01C1 2C          	xch	a,r4
+0626   01C2 6C          	add	a,r4
+0627   01C3 2C          	xch	a,r4
+0628   01C4 B4 92       	call	L0592		;writes acc to xRAM addr r1, incs r1
+0629   01C6 EE BF       	djnz	r6,L01BF
+0630   01C8 ED B9       	djnz	r5,L01B9
+0631   01CA             L01CA:
+0632   01CA 34 FC       	call	L01FC
+0633   01CC DC          	xrl	a,r4
+0634   01CD 96 F6       	jnz	L01F6
+0635   01CF             
+0636   01CF 23 FC       	mov	a,#0FCH		;point to "Good" message
+0637   01D1 F4 D3       	call	L07D3		;displays 4 chars at pg7 addr in acc
+0638   01D3             
+0639   01D3 24 9A       	jmp	L019A
+0640   01D5             
+0641   01D5             L01D5:
+0642   01D5 23 F4       	mov	a,#0F4H		;point to "vrFY" message
+0643   01D7 F4 D3       	call	L07D3		;displays 4 chars at pg7 addr in acc
+0644   01D9             
+0645   01D9 54 9F       	call	L029F
+0646   01DB 94 00       	call	L0400
+0647   01DD 24 E1       	jmp	L01E1
+0648   01DF             
+0649   01DF             L01DF:
+0650   01DF 89 02       	orl	p1,#002H	;set P11 (xRAM A9)
+0651   01E1             L01E1:
+0652   01E1 BE 00       	mov	r6,#000H
+0653   01E3 B9 00       	mov	r1,#000H
+0654   01E5             L01E5:
+0655   01E5 34 FC       	call	L01FC
+0656   01E7 2C          	xch	a,r4
+0657   01E8 6C          	add	a,r4
+0658   01E9 2C          	xch	a,r4
+0659   01EA AB          	mov	r3,a
+0660   01EB B4 7F       	call	L057F		;reads xRAM byte at addr r1 into acc, incs r1
+0661   01ED DB          	xrl	a,r3		;compare with r3 value
+0662   01EE 96 F6       	jnz	L01F6		;err if mismatch
+0663   01F0             
+0664   01F0 EE E5       	djnz	r6,L01E5
+0665   01F2 ED DF       	djnz	r5,L01DF
+0666   01F4 24 CA       	jmp	L01CA
+0667   01F6             
+0668   01F6             L01F6:
+0669   01F6 23 F8       	mov	a,#0F8H		;pt to "Err " message
+0670   01F8 F4 D3       	call	L07D3		;displays 4 chars at pg7 addr in acc
+0671   01FA             
+0672   01FA 24 9A       	jmp	L019A
+0673   01FC             
+0674   01FC             L01FC:
+0675   01FC 54 50       	call	L0250
+0676   01FE F6 FC       	jc	L01FC
+0677   0200 BF 08       	mov	r7,#008H
+0678   0202             L0202:
+0679   0202 54 50       	call	L0250
+0680   0204 2B          	xch	a,r3
+0681   0205 67          	rrc	a
+0682   0206 2B          	xch	a,r3
+0683   0207 EF 02       	djnz	r7,L0202
+0684   0209 FB          	mov	a,r3
+0685   020A 83          	ret
+0686   020B             
+0687   020B             
+0688   020B             
+0689   020B             L020B:
+0690   020B 97          	clr	c
+0691   020C A7          	cpl	c
+0692   020D BF 00       	mov	r7,#000H
+0693   020F             L020F:
+0694   020F 54 82       	call	L0282
+0695   0211 EF 0F       	djnz	r7,L020F
+0696   0213             L0213:
+0697   0213 EE 0F       	djnz	r6,L020F
+0698   0215 83          	ret
+0699   0216             
+0700   0216             
+0701   0216             
+0702   0216             L0216:				;probably tape code
+0703   0216 D5          	sel	rb1
+0704   0217 67          	rrc	a
+0705   0218 AA          	mov	r2,a
+0706   0219 34 0E       	call	L010E
+0707   021B FA          	mov	a,r2
+0708   021C F7          	rlc	a
+0709   021D C5          	sel	rb0
+0710   021E             L021E:
+0711   021E B6 22       	jf0	L0222
+0712   0220 44 2D       	jmp	L022D
+0713   0222             
+0714   0222             L0222:
+0715   0222 9A BF       	anl	p2,#0BFH	;P26 low to enable IC11 I/O decoder
+0716   0224 80          	movx	a,@r0
+0717   0225 8A 40       	orl	p2,#040H	;P26 high to disable IC11 I/O decoder
+0718   0227 D2 2B       	jb6	L022B
+0719   0229 44 2D       	jmp	L022D
+0720   022B             L022B:
+0721   022B 24 94       	jmp	L0194
+0722   022D             
+0723   022D             L022D:
+0724   022D 9A BF       	anl	p2,#0BFH	;P26=0, enable IC11 I/O decoder
+0725   022F 80          	movx	a,@r0
+0726   0230 B2 3C       	jb5	L023C
+0727   0232 C8          	dec	r0
+0728   0233 80          	movx	a,@r0
+0729   0234 8A 40       	orl	p2,#040H	;P26 high to disable IC11 I/O decoder
+0730   0236 18          	inc	r0
+0731   0237 72 3B       	jb3	L023B
+0732   0239 24 94       	jmp	L0194
+0733   023B             L023B:
+0734   023B 83          	ret
+0735   023C             
+0736   023C             
+0737   023C             
+0738   023C             L023C:
+0739   023C 8A FF       	orl	p2,#0FFH
+0740   023E             
+0741   023E 23 24       	mov	a,#024H		;set P12 and P15 bits (Program mode)
+0742   0240 39          	outl	p1,a
+0743   0241             
+0744   0241 B9 26       	mov	r1,#026H
+0745   0243 B1 CD       	mov	@r1,#0CDH
+0746   0245             L0245:
+0747   0245 9A 7F       	anl	p2,#07FH	;clear interrupt ff if it's set
+0748   0247 8A FF       	orl	p2,#0FFH
+0749   0249 27          	clr	a
+0750   024A D7          	mov	psw,a
+0751   024B 55          	strt	t
+0752   024C 25          	en	tcnti
+0753   024D 05          	en	i
+0754   024E 04 1A       	jmp	L001A		;jump to main loop
+0755   0250             
+0756   0250             
+0757   0250             
+0758   0250             L0250:				;seems like tape code
+0759   0250 97          	clr	c
+0760   0251 BA 50       	mov	r2,#050H
+0761   0253 76 5B       	jf1	L025B
+0762   0255             L0255:
+0763   0255 56 64       	jt1	L0264
+0764   0257 EA 55       	djnz	r2,L0255	;loop
+0765   0259             
+0766   0259 44 5F       	jmp	L025F
+0767   025B             
+0768   025B             L025B:
+0769   025B 46 64       	jnt1	L0264
+0770   025D EA 5B       	djnz	r2,L025B
+0771   025F             L025F:
+0772   025F BD 01       	mov	r5,#001H
+0773   0261 BE 01       	mov	r6,#001H
+0774   0263 B5          	cpl	f1
+0775   0264             L0264:
+0776   0264 B5          	cpl	f1
+0777   0265 16 68       	jtf	L0268
+0778   0267 A7          	cpl	c
+0779   0268             L0268:
+0780   0268 23 FA       	mov	a,#0FAH
+0781   026A 62          	mov	t,a
+0782   026B 54 16       	call	L0216
+0783   026D 83          	ret
+0784   026E             
+0785   026E             
+0786   026E             
+0787   026E             L026E:
+0788   026E AB          	mov	r3,a
+0789   026F 97          	clr	c
+0790   0270 54 82       	call	L0282
+0791   0272 BF 08       	mov	r7,#008H
+0792   0274             L0274:
+0793   0274 FB          	mov	a,r3
+0794   0275 67          	rrc	a
+0795   0276 AB          	mov	r3,a
+0796   0277 54 82       	call	L0282
+0797   0279 EF 74       	djnz	r7,L0274
+0798   027B 97          	clr	c
+0799   027C A7          	cpl	c
+0800   027D 54 82       	call	L0282
+0801   027F 54 82       	call	L0282
+0802   0281 83          	ret
+0803   0282             
+0804   0282             
+0805   0282             
+0806   0282             L0282:
+0807   0282 09          	in	a,p1
+0808   0283 D2 89       	jb6	L0289
+0809   0285 43 C0       	orl	a,#0C0H
+0810   0287 44 8B       	jmp	L028B
+0811   0289             
+0812   0289             L0289:
+0813   0289 53 3F       	anl	a,#03FH
+0814   028B             L028B:
+0815   028B AA          	mov	r2,a
+0816   028C 23 FC       	mov	a,#0FCH
+0817   028E F6 95       	jc	L0295
+0818   0290 F7          	rlc	a
+0819   0291 2A          	xch	a,r2
+0820   0292 D3 80       	xrl	a,#080H
+0821   0294 2A          	xch	a,r2
+0822   0295             L0295:
+0823   0295 16 99       	jtf	L0299
+0824   0297 44 95       	jmp	L0295
+0825   0299             
+0826   0299             L0299:
+0827   0299 62          	mov	t,a
+0828   029A FA          	mov	a,r2
+0829   029B 39          	outl	p1,a
+0830   029C 54 16       	call	L0216
+0831   029E 83          	ret
+0832   029F             
+0833   029F             
+0834   029F             
+0835   029F             L029F:
+0836   029F 34 FC       	call	L01FC
+0837   02A1 D3 50       	xrl	a,#050H
+0838   02A3 96 9F       	jnz	L029F
+0839   02A5 34 FC       	call	L01FC
+0840   02A7 D3 36       	xrl	a,#036H
+0841   02A9 96 9F       	jnz	L029F
+0842   02AB 83          	ret
+0843   02AC             
+0844   02AC             
+0845   02AC             
+0846   02AC             L02AC:
+0847   02AC 23 EC       	mov	a,#0ECH		;point to "SAVE" message
+0848   02AE F4 D3       	call	L07D3		;displays 4 chars at pg7 addr in acc
+0849   02B0             
+0850   02B0 BE 28       	mov	r6,#028H
+0851   02B2 54 0B       	call	L020B
+0852   02B4 23 50       	mov	a,#050H
+0853   02B6 54 6E       	call	L026E
+0854   02B8 23 36       	mov	a,#036H
+0855   02BA 54 6E       	call	L026E
+0856   02BC 94 00       	call	L0400
+0857   02BE 44 C2       	jmp	L02C2
+0858   02C0             
+0859   02C0             L02C0:
+0860   02C0 89 02       	orl	p1,#002H	;set P11 (xRAM A9)
+0861   02C2             L02C2:
+0862   02C2 BE 00       	mov	r6,#000H
+0863   02C4 B9 00       	mov	r1,#000H
+0864   02C6             L02C6:
+0865   02C6 B4 7F       	call	L057F		;reads xRAM byte at addr r1 into acc, incs r1
+0866   02C8 2C          	xch	a,r4
+0867   02C9 6C          	add	a,r4
+0868   02CA 2C          	xch	a,r4
+0869   02CB 54 6E       	call	L026E
+0870   02CD EE C6       	djnz	r6,L02C6
+0871   02CF ED C0       	djnz	r5,L02C0
+0872   02D1 FC          	mov	a,r4
+0873   02D2 54 6E       	call	L026E
+0874   02D4 BE 06       	mov	r6,#006H
+0875   02D6 54 0B       	call	L020B
+0876   02D8 24 90       	jmp	L0190
+0877   02DA             
+0878   02DA             
+0879   02DA             
+0880   02DA             L02DA:				;looks like code to read the switches
+0881   02DA B8 63       	mov	r0,#063H
+0882   02DC 9A BF       	anl	p2,#0BFH	;P26=0, enable IC11 I/O decoder
+0883   02DE 80          	movx	a,@r0		;Y0 active
+0884   02DF 37          	cpl	a		;invert bits we just read
+0885   02E0 20          	xch	a,@r0		;swap with RAM 63, so RAM holds 1 for pressed sw
+0886   02E1 37          	cpl	a		;invert RAM value
+0887   02E2 50          	anl	a,@r0		;AND RAM with inverted new bits
+0888   02E3             				;this should leave bits that are now low,
+0889   02E3             				;and were 0 in RAM var
+0890   02E3 18          	inc	r0		;r0=0x64
+0891   02E4 18          	inc	r0		;r0=0x65
+0892   02E5 A0          	mov	@r0,a		;save Y0 new press flags in RAM at 65?
+0893   02E6             
+0894   02E6 C8          	dec	r0		;r0=0x64 (Y1)
+0895   02E7 80          	movx	a,@r0
+0896   02E8 8A 40       	orl	p2,#040H	;P26 high to disable IC11 I/O decoder
+0897   02EA 37          	cpl	a		;invert bits we just read
+0898   02EB AA          	mov	r2,a		;save in r2
+0899   02EC             
+0900   02EC 20          	xch	a,@r0		;swap with RAM 64, so RAM holds 1 for pressed sw
+0901   02ED 37          	cpl	a		;invert RAM value
+0902   02EE 50          	anl	a,@r0		;AND RAM with inverted new bits
+0903   02EF             				;this should leave bits that are now low,
+0904   02EF             				;and were 0 in RAM var
+0905   02EF 2A          	xch	a,r2		;put new press flags in r2
+0906   02F0 77          	rr	a		;rotate inverted data we just read right
+0907   02F1 77          	rr	a		;twice
+0908   02F2 43 EF       	orl	a,#0EFH		;set all bits except D4
+0909   02F4 5A          	anl	a,r2
+0910   02F5 18          	inc	r0		;r0=0x65
+0911   02F6 18          	inc	r0		;r0=0x66
+0912   02F7 A0          	mov	@r0,a		;save Y1 new press flags in RAM at 66?		
+0913   02F8 53 1C       	anl	a,#01CH		;check for write, param, or prog switches?
+0914   02FA 96 FD       	jnz	L02FD
+0915   02FC 83          	ret
+0916   02FD             
+0917   02FD             
+0918   02FD             
+0919   02FD             L02FD:
+0920   02FD B8 25       	mov	r0,#025H
+0921   02FF 23 10       	mov	a,#010H
+0922   0301 15          	dis	i
+0923   0302 40          	orl	a,@r0		;set bit 4 in RAM 0x25 byte
+0924   0303 A0          	mov	@r0,a
+0925   0304 05          	en	i
+0926   0305             L0305:
+0927   0305 83          	ret
+0928   0306             
+0929   0306             
+0930   0306             
+0931   0306             L0306:				;write current prog number to display buffer
+0932   0306 B8 27       	mov	r0,#027H	;current program number in binary?
+0933   0308 B9 5F       	mov	r1,#05FH	;program LSdigit in display buffer
+0934   030A F0          	mov	a,@r0
+0935   030B 53 07       	anl	a,#007H
+0936   030D             L030D:
+0937   030D 03 7B       	add	a,#07BH		;7B is addr of segs table starting with "1"
+0938   030F 14 05       	call	L0005		;read page 0 table byte at addr in acc
+0939   0311 A1          	mov	@r1,a
+0940   0312 19          	inc	r1
+0941   0313 F0          	mov	a,@r0
+0942   0314 E7          	rl	a
+0943   0315 47          	swap	a
+0944   0316 64 28       	jmp	L0328
+0945   0318             
+0946   0318             L0318:				;write current parm number to display buffer
+0947   0318 B8 28       	mov	r0,#028H	;current parameter number in binary?
+0948   031A B9 5D       	mov	r1,#05DH	;parameter LSdigit in display buffer
+0949   031C F0          	mov	a,@r0
+0950   031D 53 03       	anl	a,#003H
+0951   031F 03 7B       	add	a,#07BH		;7B is addr of segs table starting with "1"
+0952   0321 14 05       	call	L0005		;read page 0 table byte at addr in acc
+0953   0323 A1          	mov	@r1,a
+0954   0324 19          	inc	r1
+0955   0325 F0          	mov	a,@r0
+0956   0326 77          	rr	a
+0957   0327             L0327:
+0958   0327 77          	rr	a
+0959   0328             L0328:
+0960   0328 53 07       	anl	a,#007H
+0961   032A 03 7B       	add	a,#07BH		;7B is addr of segs table starting with "1"
+0962   032C 14 05       	call	L0005		;read page 0 table byte at addr in acc
+0963   032E A1          	mov	@r1,a		;update MSdigit in display buffer
+0964   032F             L032F:
+0965   032F 83          	ret
+0966   0330             
+0967   0330             
+0968   0330             
+0969   0330             L0330:				;possibly the divider values for our notes
+0970   0330 E1 70       	.db	$E1,$70
+0971   0332 D4 C2       	.db	$D4,$C2
+0972   0334 C8 D0       	.db	$C8,$D0
+0973   0336 BD 8C       	.db	$BD,$8C
+0974   0338 B2 E9       	.db	$B2,$E9
+0975   033A A8 E5       	.db	$A8,$E5
+0976   033C 9F 6A       	.db	$9F,$6A
+0977   033E 96 78       	.db	$96,$78
+0978   0340 8E 06       	.db	$8E,$06
+0979   0342 86 0D       	.db	$86,$0D
+0980   0344 7E 87       	.db	$7E,$87
+0981   0346 77 6D       	.db	$77,$6D
+0982   0348 70 8A       	.db	$70,$8A
+0983   034A 6A 37       	.db	$6A,$37
+0984   034C 64 41       	.db	$64,$41
+0985   034E 5E A3       	.db	$5E,$A3
+0986   0350 59 54       	.db	$59,$54
+0987   0352 54 53       	.db	$54,$53
+0988   0354 4F 96       	.db	$4F,$96
+0989   0356 4B 22       	.db	$4B,$22
+0990   0358 46 E8       	.db	$46,$E8
+0991   035A 42 EE       	.db	$42,$EE
+0992   035C 3F 2E       	.db	$3F,$2E
+0993   035E 3B A5       	.db	$3B,$A5
+0994   0360 38 59       	.db	$38,$59
+0995   0362 35 2C       	.db	$35,$2C
+0996   0364 32 2F       	.db	$32,$2F
+0997   0366 2F 62       	.db	$2F,$62
+0998   0368 2C B9       	.db	$2C,$B9
+0999   036A 2A 36       	.db	$2A,$36
+1000   036C 27 D5       	.db	$27,$D5
+1001   036E 25 9B       	.db	$25,$9B
+1002   0370 23 7D       	.db	$23,$7D
+1003   0372 21 7F       	.db	$21,$7F
+1004   0374 1F 9F       	.db	$1F,$9F
+1005   0376 1D D9       	.db	$1D,$D9
+1006   0378 1C 27       	.db	$1C,$27
+1007   037A 1A 91       	.db	$1A,$91
+1008   037C 19 13       	.db	$19,$13
+1009   037E 17 AB       	.db	$17,$AB
+1010   0380 16 57       	.db	$16,$57
+1011   0382 15 17       	.db	$15,$17
+1012   0384 13 E7       	.db	$13,$E7
+1013   0386 12 CB       	.db	$12,$CB
+1014   0388 11 BB       	.db	$11,$BB
+1015   038A 10 BE       	.db	$10,$BE
+1016   038C 0F CD       	.db	$0F,$CD
+1017   038E 0E EB       	.db	$0E,$EB
+1018   0390 0E 15       	.db	$0E,$15
+1019   0392 0D 4A       	.db	$0D,$4A
+1020   0394 0C 8B       	.db	$0C,$8B
+1021   0396 0B D7       	.db	$0B,$D7
+1022   0398 0B 2D       	.db	$0B,$2D
+1023   039A 0A 8D       	.db	$0A,$8D
+1024   039C 09 F5       	.db	$09,$F5
+1025   039E 09 65       	.db	$09,$65
+1026   03A0 08 DF       	.db	$08,$DF
+1027   03A2 08 5D       	.db	$08,$5D
+1028   03A4 07 E7       	.db	$07,$E7
+1029   03A6 07 75       	.db	$07,$75
+1030   03A8 07 09       	.db	$07,$09
+1031   03AA 06 A3       	.db	$06,$A3
+1032   03AC 06 45       	.db	$06,$45
+1033   03AE 05 EB       	.db	$05,$EB
+1034   03B0 05 97       	.db	$05,$97
+1035   03B2 05 47       	.db	$05,$47
+1036   03B4 04 F9       	.db	$04,$F9
+1037   03B6 04 B3       	.db	$04,$B3
+1038   03B8 04 6F       	.db	$04,$6F
+1039   03BA 04 2F       	.db	$04,$2F
+1040   03BC 03 F3       	.db	$03,$F3
+1041   03BE 03 BB       	.db	$03,$BB
+1042   03C0 03 85       	.db	$03,$85
+1043   03C2 03 53       	.db	$03,$53
+1044   03C4 03 23       	.db	$03,$23
+1045   03C6 02 F5       	.db	$02,$F5
+1046   03C8 02 CB       	.db	$02,$CB
+1047   03CA 02 A3       	.db	$02,$A3
+1048   03CC 02 7D       	.db	$02,$7D
+1049   03CE 02 59       	.db	$02,$59
+1050   03D0 02 37       	.db	$02,$37
+1051   03D2 02 17       	.db	$02,$17
+1052   03D4 01 F9       	.db	$01,$F9
+1053   03D6 01 DD       	.db	$01,$DD
+1054   03D8 01 C3       	.db	$01,$C3
+1055   03DA 01 A9       	.db	$01,$A9
+1056   03DC 01 91       	.db	$01,$91
+1057   03DE 01 7B       	.db	$01,$7B
+1058   03E0 01 65       	.db	$01,$65
+1059   03E2 01 51       	.db	$01,$51
+1060   03E4 01 3F       	.db	$01,$3F
+1061   03E6 01 2D       	.db	$01,$2D
+1062   03E8 01 1C       	.db	$01,$1C
+1063   03EA 01 0C       	.db	$01,$0C
+1064   03EC 00 FD       	.db	$00,$FD
+1065   03EE 00 EF       	.db	$00,$EF
+1066   03F0 00 E1       	.db	$00,$E1
+1067   03F2 00 D5       	.db	$00,$D5
+1068   03F4 00 C9       	.db	$00,$C9
+1069   03F6 00 BD       	.db	$00,$BD
+1070   03F8 00 B3       	.db	$00,$B3
+1071   03FA 00 A9       	.db	$00,$A9
+1072   03FC 00 9F       	.db	$00,$9F
+1073   03FE 00 96       	.db	$00,$96
+1074   0400             
+1075   0400             L0400:
+1076   0400 BC          	.db	$BC
+1077   0401 00          	.db	$00
+1078   0402             
+1079   0402 BD 02       	mov	r5,#002H
+1080   0404 99 FD       	anl	p1,#0FDH	;P11 low (xRAM A9)
+1081   0406 83          	ret
+1082   0407             
+1083   0407             
+1084   0407             L0407:
+1085   0407 B9 20       	mov	r1,#020H
+1086   0409 23 07       	mov	a,#007H
+1087   040B 61          	add	a,@r1
+1088   040C A1          	mov	@r1,a
+1089   040D E7          	rl	a
+1090   040E 51          	anl	a,@r1
+1091   040F 53 80       	anl	a,#080H
+1092   0411             L0411:
+1093   0411 D5          	sel	rb1
+1094   0412 15          	dis	i
+1095   0413 2E          	xch	a,r6
+1096   0414 53 7F       	anl	a,#07FH
+1097   0416 4E          	orl	a,r6
+1098   0417 AE          	mov	r6,a
+1099   0418 05          	en	i
+1100   0419 C5          	sel	rb0
+1101   041A 83          	ret
+1102   041B             
+1103   041B             
+1104   041B             
+1105   041B             L041B:
+1106   041B B8 64       	mov	r0,#064H
+1107   041D F0          	mov	a,@r0
+1108   041E B2 22       	jb5	L0422
+1109   0420 84 26       	jmp	L0426
+1110   0422             
+1111   0422             L0422:
+1112   0422 99 DF       	anl	p1,#0DFH
+1113   0424 84 4A       	jmp	L044A
+1114   0426             
+1115   0426             L0426:
+1116   0426 09          	in	a,p1
+1117   0427 92 2B       	jb4	L042B		;jump if Write LED is on
+1118   0429 84 4F       	jmp	L044F
+1119   042B             
+1120   042B             L042B:
+1121   042B B8 25       	mov	r0,#025H
+1122   042D F0          	mov	a,@r0
+1123   042E 92 8E       	jb4	L048E
+1124   0430 B9 64       	mov	r1,#064H
+1125   0432 F1          	mov	a,@r1
+1126   0433 D2 37       	jb6	L0437
+1127   0435 84 8E       	jmp	L048E
+1128   0437             
+1129   0437             L0437:
+1130   0437 94 07       	call	L0407
+1131   0439 B4 9F       	call	L059F
+1132   043B B8 25       	mov	r0,#025H
+1133   043D F0          	mov	a,@r0
+1134   043E 32 41       	jb1	L0441
+1135   0440 83          	ret
+1136   0441             
+1137   0441             
+1138   0441             
+1139   0441             L0441:
+1140   0441 99 E3       	anl	p1,#0E3H	;clear P14, P13, P12 bits
+1141   0443 89 04       	orl	p1,#004H	;set P12 (Program mode)
+1142   0445 23 86       	mov	a,#086H
+1143   0447             L0447:
+1144   0447 18          	inc	r0
+1145   0448 40          	orl	a,@r0
+1146   0449 A0          	mov	@r0,a
+1147   044A             L044A:
+1148   044A 27          	clr	a
+1149   044B 94 11       	call	L0411
+1150   044D 84 F3       	jmp	L04F3
+1151   044F             
+1152   044F             L044F:
+1153   044F B8 25       	mov	r0,#025H
+1154   0451 F0          	mov	a,@r0
+1155   0452 52 56       	jb2	L0456
+1156   0454 84 8A       	jmp	L048A
+1157   0456             
+1158   0456             L0456:
+1159   0456 B9 64       	mov	r1,#064H
+1160   0458 F1          	mov	a,@r1
+1161   0459 53 03       	anl	a,#003H
+1162   045B 03 5E       	add	a,#05EH
+1163   045D B3          	jmpp	@a		;INFO: indirect jump
+1164   045E             
+1165   045E             ;L045E:				;same page jump table (just low byte)
+1166   045E 62          	.db	$62
+1167   045F 74          	.db	$74
+1168   0460 66          	.db	$66
+1169   0461 82          	.db	$82
+1170   0462             
+1171   0462             ;L0462:
+1172   0462 23 FB       	mov	a,#0FBH
+1173   0464 84 F7       	jmp	L04F7
+1174   0466             
+1175   0466             
+1176   0466             ;L0466:
+1177   0466 B4 0F       	call	L050F
+1178   0468 F0          	mov	a,@r0
+1179   0469 72 6C       	jb3	L046C
+1180   046B 83          	ret
+1181   046C             
+1182   046C             
+1183   046C             L046C:
+1184   046C 23 F7       	mov	a,#0F7H
+1185   046E 94 F7       	call	L04F7
+1186   0470 23 D0       	mov	a,#0D0H
+1187   0472 84 F0       	jmp	L04F0
+1188   0474             
+1189   0474             
+1190   0474             ;L0474:
+1191   0474 B4 0F       	call	L050F
+1192   0476 F0          	mov	a,@r0
+1193   0477 72 7A       	jb3	L047A
+1194   0479 83          	ret
+1195   047A             
+1196   047A             
+1197   047A             L047A:
+1198   047A 23 F7       	mov	a,#0F7H
+1199   047C 94 F7       	call	L04F7
+1200   047E 23 E0       	mov	a,#0E0H
+1201   0480 84 F0       	jmp	L04F0
+1202   0482             
+1203   0482 D4 AA       	call	L06AA
+1204   0484 D4 BC       	call	L06BC
+1205   0486 23 C0       	mov	a,#0C0H
+1206   0488 84 C3       	jmp	L04C3
+1207   048A             
+1208   048A             
+1209   048A             L048A:				;acc holds 0x25 addr contents and bit 2 is 0
+1210   048A 92 8E       	jb4	L048E
+1211   048C 84 AF       	jmp	L04AF
+1212   048E             
+1213   048E             L048E:				;bit 4 at addr 0x25 is set (prog, parm or write sw was pressed)
+1214   048E B9 66       	mov	r1,#066H	;probably Y1 row new sw press flags
+1215   0490 F1          	mov	a,@r1
+1216   0491 99 E3       	anl	p1,#0E3H	;shut off PROG, PARM, and WRITE LED's
+1217   0493 52 99       	jb2	L0499		;bit 2 is program switch
+1218   0495 72 9D       	jb3	L049D		;bit 3 is parameter switch
+1219   0497 92 A1       	jb4	L04A1		;bit 4 is write switch
+1220   0499             L0499:
+1221   0499 89 04       	orl	p1,#004H	;set P12 (Program mode)
+1222   049B 84 A7       	jmp	L04A7
+1223   049D             
+1224   049D             L049D:
+1225   049D 89 08       	orl	p1,#008H	;set P13 (Parameter mode)
+1226   049F 84 A7       	jmp	L04A7
+1227   04A1             
+1228   04A1             L04A1:
+1229   04A1 89 10       	orl	p1,#010H	;set P14 (Write mode)
+1230   04A3 B9 20       	mov	r1,#020H
+1231   04A5 B1 00       	mov	@r1,#000H
+1232   04A7             L04A7:
+1233   04A7 23 EC       	mov	a,#0ECH
+1234   04A9 94 F7       	call	L04F7
+1235   04AB 23 0C       	mov	a,#00CH
+1236   04AD 84 47       	jmp	L0447
+1237   04AF             
+1238   04AF             
+1239   04AF             L04AF:				;acc holds 0x25 addr contents and bits 2 and 4 are both 0
+1240   04AF B9 66       	mov	r1,#066H	;probably Y1 row new sw press flags
+1241   04B1 12 D4       	jb0	L04D4
+1242   04B3 F1          	mov	a,@r1
+1243   04B4 53 03       	anl	a,#003H		;check for dn or up switch press
+1244   04B6 03 B9       	add	a,#0B9H
+1245   04B8 B3          	jmpp	@a		;INFO: indirect jump
+1246   04B9             
+1247   04B9             
+1248   04B9             ;L04B9:				;same page jump table (just low byte)
+1249   04B9 D4          	.db	$D4		;0 neither switch pressed
+1250   04BA BD          	.db	$BD		;1 up sw pressed
+1251   04BB C1          	.db	$C1		;2 dn sw pressed
+1252   04BC C8          	.db	$C8		;3 both switches pressed
+1253   04BD             
+1254   04BD             L04BD:				;up sw pressed
+1255   04BD 23 E0       	mov	a,#0E0H		;set bits 7,6,5 at addr 0x26
+1256   04BF 84 C3       	jmp	L04C3
+1257   04C1             
+1258   04C1             ;L04C1:
+1259   04C1 23 D0       	mov	a,#0D0H		;dn sw pressed set bits 7,6,4 at addr 0x26
+1260   04C3             L04C3:
+1261   04C3 B8 26       	mov	r0,#026H
+1262   04C5 40          	orl	a,@r0
+1263   04C6 A0          	mov	@r0,a
+1264   04C7             
+1265   04C7 C8          	dec	r0		;r0 = 0x25
+1266   04C8             
+1267   04C8             L04C8:				;both switches pressed, or fall through
+1268   04C8 23 04       	mov	a,#004H
+1269   04CA 15          	dis	i
+1270   04CB 40          	orl	a,@r0		;set bit 2 at addr 0x25
+1271   04CC A0          	mov	@r0,a
+1272   04CD 05          	en	i
+1273   04CE B9 21       	mov	r1,#021H
+1274   04D0 B1 20       	mov	@r1,#020H	;and write 0x20 to addr 0x21
+1275   04D2 84 F3       	jmp	L04F3
+1276   04D4             
+1277   04D4             
+1278   04D4             L04D4:				;neither sw pressed
+1279   04D4 F1          	mov	a,@r1
+1280   04D5 F2 FC       	jb7	L04FC
+1281   04D7             
+1282   04D7 09          	in	a,p1
+1283   04D8 72 E6       	jb3	L04E6		;if Parameter LED is on, jump
+1284   04DA             
+1285   04DA B4 9F       	call	L059F
+1286   04DC B8 25       	mov	r0,#025H
+1287   04DE F0          	mov	a,@r0
+1288   04DF 32 E2       	jb1	L04E2
+1289   04E1 83          	ret
+1290   04E2             
+1291   04E2             
+1292   04E2             
+1293   04E2             L04E2:
+1294   04E2 23 CD       	mov	a,#0CDH
+1295   04E4 84 F0       	jmp	L04F0
+1296   04E6             
+1297   04E6             
+1298   04E6             L04E6:				;Parameter LED is on
+1299   04E6 B4 D5       	call	L05D5
+1300   04E8 B8 25       	mov	r0,#025H
+1301   04EA F0          	mov	a,@r0
+1302   04EB 32 EE       	jb1	L04EE
+1303   04ED 83          	ret
+1304   04EE             
+1305   04EE             
+1306   04EE             
+1307   04EE             L04EE:
+1308   04EE 23 C8       	mov	a,#0C8H
+1309   04F0             L04F0:
+1310   04F0 18          	inc	r0
+1311   04F1 40          	orl	a,@r0
+1312   04F2 A0          	mov	@r0,a
+1313   04F3             L04F3:
+1314   04F3 23 FC       	mov	a,#0FCH
+1315   04F5 B8 25       	mov	r0,#025H
+1316   04F7             L04F7:
+1317   04F7 15          	dis	i
+1318   04F8 50          	anl	a,@r0
+1319   04F9 A0          	mov	@r0,a
+1320   04FA 05          	en	i
+1321   04FB 83          	ret
+1322   04FC             
+1323   04FC             
+1324   04FC             
+1325   04FC             L04FC:				;bump current program number
+1326   04FC B8 27       	mov	r0,#027H	;pt to current program number
+1327   04FE F0          	mov	a,@r0		;get it
+1328   04FF 17          	inc	a		;bump it
+1329   0500             
+1330   0500             ;L0500:
+1331   0500 36 08       	jt0	L0508		;t0 pin is tied high!
+1332   0502 53 07       	anl	a,#007H
+1333   0504 B4 CC       	call	L05CC
+1334   0506 A4 0B       	jmp	L050B
+1335   0508             
+1336   0508             L0508:
+1337   0508 53 3F       	anl	a,#03FH		;limit it to 63 dec
+1338   050A A0          	mov	@r0,a		;update it
+1339   050B             L050B:
+1340   050B B8 25       	mov	r0,#025H
+1341   050D 84 E2       	jmp	L04E2
+1342   050F             
+1343   050F             L050F:
+1344   050F B9 21       	mov	r1,#021H
+1345   0511 F1          	mov	a,@r1
+1346   0512 07          	dec	a
+1347   0513 C6 17       	jz	L0517
+1348   0515 A1          	mov	@r1,a
+1349   0516 83          	ret
+1350   0517             
+1351   0517             
+1352   0517             
+1353   0517             L0517:
+1354   0517 B1 06       	mov	@r1,#006H
+1355   0519 B9 25       	mov	r1,#025H
+1356   051B 23 08       	mov	a,#008H
+1357   051D 15          	dis	i
+1358   051E 41          	orl	a,@r1
+1359   051F A1          	mov	@r1,a
+1360   0520 05          	en	i
+1361   0521 83          	ret
+1362   0522             
+1363   0522             
+1364   0522             
+1365   0522             L0522:				;called when Up sw is pressed
+1366   0522 B4 6A       	call	L056A		;set up prog xRAM addr in r1, r0=0x40, r7=8
+1367   0524             L0524:
+1368   0524 B4 7F       	call	L057F		;reads xRAM byte at addr r1 into acc, incs r1
+1369   0526 A0          	mov	@r0,a
+1370   0527 18          	inc	r0
+1371   0528 EF 24       	djnz	r7,L0524	;loop
+1372   052A             
+1373   052A A0          	mov	@r0,a
+1374   052B 18          	inc	r0
+1375   052C B9 41       	mov	r1,#041H
+1376   052E 23 07       	mov	a,#007H
+1377   0530 51          	anl	a,@r1
+1378   0531 A0          	mov	@r0,a
+1379   0532             
+1380   0532 B8 40       	mov	r0,#040H	;copy ten RAM bytes from
+1381   0534 B9 50       	mov	r1,#050H	;0x40 to 0x50
+1382   0536 BF 0A       	mov	r7,#00AH
+1383   0538             L0538:
+1384   0538 F0          	mov	a,@r0
+1385   0539 A1          	mov	@r1,a
+1386   053A 18          	inc	r0
+1387   053B 19          	inc	r1
+1388   053C EF 38       	djnz	r7,L0538	;loop
+1389   053E             
+1390   053E 83          	ret
+1391   053F             
+1392   053F             
+1393   053F             
+1394   053F             L053F:				;called when Dn sw is pressed
+1395   053F B8 59       	mov	r0,#059H
+1396   0541 B9 51       	mov	r1,#051H
+1397   0543 23 07       	mov	a,#007H
+1398   0545 50          	anl	a,@r0
+1399   0546 21          	xch	a,@r1
+1400   0547 53 F0       	anl	a,#0F0H
+1401   0549 41          	orl	a,@r1
+1402   054A A1          	mov	@r1,a
+1403   054B C8          	dec	r0
+1404   054C F0          	mov	a,@r0
+1405   054D C8          	dec	r0
+1406   054E A0          	mov	@r0,a
+1407   054F             
+1408   054F B8 50       	mov	r0,#050H	;copy ten RAM bytes from 
+1409   0551 B9 40       	mov	r1,#040H	;0x50 to 0x40
+1410   0553 BF 0A       	mov	r7,#00AH
+1411   0555             L0555:
+1412   0555 F0          	mov	a,@r0
+1413   0556 A1          	mov	@r1,a
+1414   0557 18          	inc	r0
+1415   0558 19          	inc	r1
+1416   0559 EF 55       	djnz	r7,L0555	;loop
+1417   055B             
+1418   055B B8 43       	mov	r0,#043H
+1419   055D 23 3F       	mov	a,#03FH
+1420   055F 50          	anl	a,@r0
+1421   0560 A0          	mov	@r0,a
+1422   0561 B4 6A       	call	L056A		;set up prog xRAM addr in r1, r0=0x40, r7=8
+1423   0563             L0563:
+1424   0563 F0          	mov	a,@r0		;read from patch buffer
+1425   0564 B4 92       	call	L0592		;writes acc to xRAM addr r1, incs r1
+1426   0566 18          	inc	r0
+1427   0567 EF 63       	djnz	r7,L0563
+1428   0569 83          	ret
+1429   056A             
+1430   056A             
+1431   056A             
+1432   056A             L056A:				;set up prog xRAM addr in r1, r0=0x40, r7=8
+1433   056A B8 27       	mov	r0,#027H	;addr of prog number?
+1434   056C F0          	mov	a,@r0
+1435   056D B2 73       	jb5	L0573		;32-63?
+1436   056F             				;if 32 progs occupy 512 nibbles (256 bytes)
+1437   056F             				;then each one gets 8 bytes (64 bits)
+1438   056F 99 FD       	anl	p1,#0FDH	;clear P11 (xRAM A9)
+1439   0571 A4 75       	jmp	L0575
+1440   0573             
+1441   0573             L0573:
+1442   0573 89 02       	orl	p1,#002H	;set P11 (xRAM A9)
+1443   0575             L0575:
+1444   0575 77          	rr	a
+1445   0576 47          	swap	a
+1446   0577 53 F8       	anl	a,#0F8H
+1447   0579 A9          	mov	r1,a		;start addr of prog in xRAM
+1448   057A B8 40       	mov	r0,#040H	;dest addr in RAM?
+1449   057C BF 08       	mov	r7,#008H	;8 bytes per prog
+1450   057E 83          	ret
+1451   057F             
+1452   057F             
+1453   057F             				;reads xRAM byte at addr r1 into acc, incs r1
+1454   057F             L057F:				
+1455   057F 9A DF       	anl	p2,#0DFH	;P25=0 to enable xRAM chip
+1456   0581 99 FE       	anl	p1,#0FEH	;P10=0, A0 to xRAM is 0
+1457   0583 81          	movx	a,@r1		;read 4 bits from xRAM
+1458   0584 53 0F       	anl	a,#00FH
+1459   0586 AA          	mov	r2,a		;save in r2
+1460   0587 89 01       	orl	p1,#001H	;P10=1, A0 to xRAM is 1
+1461   0589 81          	movx	a,@r1		;read 4 bits from xRAM
+1462   058A 8A 20       	orl	p2,#020H	;P25=1 to disable xRAM chip
+1463   058C 47          	swap	a		;put second nibble in D7-D4
+1464   058D 53 F0       	anl	a,#0F0H
+1465   058F 4A          	orl	a,r2		;OR it with first one to maks a byte
+1466   0590 19          	inc	r1		;bump xRAM ptr
+1467   0591 83          	ret
+1468   0592             
+1469   0592             
+1470   0592             
+1471   0592             L0592:				;writes acc to xRAM addr r1, incs r1
+1472   0592 9A DF       	anl	p2,#0DFH	;P25=0 to enable xRAM chip
+1473   0594 99 FE       	anl	p1,#0FEH	;P10=0, A0 to xRAM is 0
+1474   0596 91          	movx	@r1,a		;write low 4 bits to xRAM
+1475   0597 47          	swap	a
+1476   0598 89 01       	orl	p1,#001H	;P10=1, A0 to xRAM is 1
+1477   059A 91          	movx	@r1,a		;write upper 4 bits to xRAM
+1478   059B 8A 20       	orl	p2,#020H	;P25=1 to disable xRAM chip
+1479   059D 19          	inc	r1		;bump xRAM ptr
+1480   059E 83          	ret
+1481   059F             
+1482   059F             
+1483   059F             
+1484   059F             L059F:
+1485   059F B9 65       	mov	r1,#065H	;possibly flags for new keys pressed in Y0 (number keys)
+1486   05A1 F1          	mov	a,@r1
+1487   05A2 C6 D4       	jz	L05D4		;if no new keys, just return
+1488   05A4             
+1489   05A4 D4 4F       	call	L064F		;index of rightmost 1 bit in acc is returned in r2, acc
+1490   05A6             
+1491   05A6 B8 25       	mov	r0,#025H
+1492   05A8 F0          	mov	a,@r0
+1493   05A9 12 C2       	jb0	L05C2		;jump if bit 0 of 25 (flags) is set (left digit already entered)
+1494   05AB             
+1495   05AB 23 01       	mov	a,#001H
+1496   05AD 15          	dis	i
+1497   05AE 40          	orl	a,@r0
+1498   05AF A0          	mov	@r0,a		;set bit 0 at addr 0x25
+1499   05B0 05          	en	i
+1500   05B1             
+1501   05B1 C8          	dec	r0		;r0=0x24
+1502   05B2 FA          	mov	a,r2		;get bit index
+1503   05B3 47          	swap	a
+1504   05B4 77          	rr	a		;times 8
+1505   05B5 A0          	mov	@r0,a		;store that at 0x24
+1506   05B6             
+1507   05B6 FA          	mov	a,r2
+1508   05B7 03 7B       	add	a,#07BH		;7B is addr of segs table starting with "1"
+1509   05B9 14 05       	call	L0005		;read page 0 table byte at addr in acc
+1510   05BB B8 60       	mov	r0,#060H	;60 is addr of program MSdig in display buffer
+1511   05BD             L05BD:
+1512   05BD A0          	mov	@r0,a		;update it
+1513   05BE C8          	dec	r0
+1514   05BF B0 40       	mov	@r0,#040H	;put a dash in LSdigit
+1515   05C1 83          	ret
+1516   05C2             
+1517   05C2             
+1518   05C2             
+1519   05C2             L05C2:
+1520   05C2 23 02       	mov	a,#002H
+1521   05C4 15          	dis	i
+1522   05C5 40          	orl	a,@r0		;set bit 1 at addr 0x25
+1523   05C6 53 FE       	anl	a,#0FEH		;and clear bit 0
+1524   05C8 A0          	mov	@r0,a
+1525   05C9             
+1526   05C9 05          	en	i
+1527   05CA C8          	dec	r0		;r0=0x24
+1528   05CB FA          	mov	a,r2
+1529   05CC             L05CC:
+1530   05CC 20          	xch	a,@r0		;get 0x24 value into acc 
+1531   05CD 53 38       	anl	a,#038H		;keep prev # times 8 part
+1532   05CF 40          	orl	a,@r0		;OR in new number value
+1533   05D0 A0          	mov	@r0,a		;update 0x24
+1534   05D1             
+1535   05D1 B8 27       	mov	r0,#027H
+1536   05D3 A0          	mov	@r0,a		;set current program to this value
+1537   05D4             L05D4:
+1538   05D4 83          	ret
+1539   05D5             
+1540   05D5             
+1541   05D5             
+1542   05D5             L05D5:				;parameter LED is on for us to be here
+1543   05D5 B9 65       	mov	r1,#065H	;any number keys newly pressed?
+1544   05D7 F1          	mov	a,@r1
+1545   05D8 96 DB       	jnz	L05DB		;yes, so jump
+1546   05DA 83          	ret
+1547   05DB             
+1548   05DB             
+1549   05DB             
+1550   05DB             L05DB:
+1551   05DB D4 4F       	call	L064F		;index of rightmost 1 bit in acc is returned in r2, acc
+1552   05DD             
+1553   05DD B8 25       	mov	r0,#025H
+1554   05DF F0          	mov	a,@r0
+1555   05E0 12 FC       	jb0	L05FC		;jump if bit 0 of 25 (flags) is set (left digit already entered)
+1556   05E2             
+1557   05E2 FA          	mov	a,r2		;we are entering left digit now
+1558   05E3 03 FA       	add	a,#0FAH
+1559   05E5 E6 E8       	jnc	L05E8		;jump if index is 0-5 (indicating digit was 1-6)
+1560   05E7 83          	ret
+1561   05E8             
+1562   05E8             
+1563   05E8             
+1564   05E8             L05E8:
+1565   05E8 23 01       	mov	a,#001H
+1566   05EA 15          	dis	i
+1567   05EB 40          	orl	a,@r0
+1568   05EC A0          	mov	@r0,a		;set bit 0 at addr 0x25
+1569   05ED 05          	en	i
+1570   05EE             
+1571   05EE FA          	mov	a,r2		;multiply 0-5 bit pos times 4 to get parm upper bits
+1572   05EF E7          	rl	a
+1573   05F0 E7          	rl	a
+1574   05F1 C8          	dec	r0		;r0=0x24
+1575   05F2 A0          	mov	@r0,a		;build parm number in binary at addr 0x24
+1576   05F3 FA          	mov	a,r2
+1577   05F4 03 7B       	add	a,#07BH		;7B is addr of segs table starting with "1"
+1578   05F6 14 05       	call	L0005		;read page 0 table byte at addr in acc
+1579   05F8 B8 5E       	mov	r0,#05EH	;5E is address of parm MSdigit in display buffer
+1580   05FA A4 BD       	jmp	L05BD		;put a dash in LSDigit, then return
+1581   05FC             
+1582   05FC             L05FC:
+1583   05FC FA          	mov	a,r2
+1584   05FD 53 FC       	anl	a,#0FCH		;limit second parm digit sw index to 0-3 (#1-4)
+1585   05FF             ;L05FF:
+1586   05FF 96 4E       	jnz	L064E		;if over, ignore it
+1587   0601 C8          	dec	r0		;r0=0x24
+1588   0602 F0          	mov	a,@r0		;get partially formed parm # in binary
+1589   0603 53 1C       	anl	a,#01CH		;keep part from MSDigit
+1590   0605 4A          	orl	a,r2		;add in new part
+1591   0606             L0606:
+1592   0606 A0          	mov	@r0,a		;update 0x24 value
+1593   0607 E7          	rl	a		;rotate left to form word table index
+1594   0608 AB          	mov	r3,a
+1595   0609 03 BC       	add	a,#0BCH
+1596   060B 14 05       	call	L0005		;read page 0 table byte at addr in acc
+1597   060D AC          	mov	r4,a
+1598   060E F2 13       	jb7	L0613		;if bit 6 or 7 of table byte is set, jump
+1599   0610 D2 13       	jb6	L0613
+1600   0612 83          	ret			;otherwise return
+1601   0613             
+1602   0613             
+1603   0613             	
+1604   0613             L0613:
+1605   0613 B8 29       	mov	r0,#029H
+1606   0615 53 0F       	anl	a,#00FH		;low nibble of table byte we just read
+1607   0617 03 50       	add	a,#050H		;added to 0x50
+1608   0619 A0          	mov	@r0,a		;29 holds addr (50-59) in tmp buf/hw for this parm's bits
+1609   061A             
+1610   061A 18          	inc	r0		;r0=2A
+1611   061B 18          	inc	r0		;r0=2B
+1612   061C FC          	mov	a,r4		;get byte read from first table
+1613   061D E7          	rl	a
+1614   061E E7          	rl	a
+1615   061F 53 03       	anl	a,#003H
+1616   0621 A0          	mov	@r0,a		;save top two bits at 0x2B
+1617   0622              
+1618   0622 18          	inc	r0		;r0=0x2C
+1619   0623             
+1620   0623 FB          	mov	a,r3
+1621   0624 03 BD       	add	a,#0BDH		;table addr+1
+1622   0626 14 05       	call	L0005		;read page 0 table byte at addr in acc
+1623   0628 AC          	mov	r4,a		;save table second byte
+1624   0629 47          	swap	a
+1625   062A 53 0F       	anl	a,#00FH
+1626   062C 17          	inc	a		;save upper nibble+1 at 0x2C addr
+1627   062D A0          	mov	@r0,a
+1628   062E             
+1629   062E 18          	inc	r0		;r0=0x2D
+1630   062F             
+1631   062F FC          	mov	a,r4		;get back table second byte
+1632   0630 53 0F       	anl	a,#00FH
+1633   0632 AC          	mov	r4,a		;just keep low nibble
+1634   0633 03 F4       	add	a,#0F4H		;use it to index second table
+1635   0635 14 05       	call	L0005		;read page 0 table byte at addr in acc
+1636   0637 A0          	mov	@r0,a		;save second table byte at 0x2D
+1637   0638             
+1638   0638 18          	inc	r0		;r0=0x2E
+1639   0639             
+1640   0639 FC          	mov	a,r4		;use low nibble again to access third table
+1641   063A 03 EC       	add	a,#0ECH
+1642   063C 14 05       	call	L0005		;read page 0 table byte at addr in acc
+1643   063E A0          	mov	@r0,a		;save third table byte at 0x2E
+1644   063F             
+1645   063F B8 28       	mov	r0,#028H	;pt to current parameter number
+1646   0641 FB          	mov	a,r3
+1647   0642 77          	rr	a
+1648   0643 A0          	mov	@r0,a		;update it
+1649   0644             
+1650   0644 B8 25       	mov	r0,#025H
+1651   0646 23 02       	mov	a,#002H
+1652   0648 15          	dis	i
+1653   0649 40          	orl	a,@r0		;set bit 2 at addr 0x25
+1654   064A 53 FE       	anl	a,#0FEH		;and clear bit 0
+1655   064C A0          	mov	@r0,a
+1656   064D 05          	en	i
+1657   064E             L064E:
+1658   064E 83          	ret
+1659   064F             
+1660   064F             
+1661   064F             	
+1662   064F             L064F:				;index of rightmost 1 bit in acc is returned in r2,acc
+1663   064F 97          	clr	c
+1664   0650 BA 00       	mov	r2,#000H
+1665   0652 BF 08       	mov	r7,#008H
+1666   0654             L0654:
+1667   0654 67          	rrc	a
+1668   0655 F6 5A       	jc	L065A
+1669   0657 1A          	inc	r2
+1670   0658 EF 54       	djnz	r7,L0654	;loop
+1671   065A             L065A:
+1672   065A FA          	mov	a,r2
+1673   065B 83          	ret
+1674   065C             
+1675   065C             
+1676   065C             	
+1677   065C             L065C:
+1678   065C D4 AE       	call	L06AE
+1679   065E AA          	mov	r2,a
+1680   065F B9 28       	mov	r1,#028H
+1681   0661 23 01       	mov	a,#001H
+1682   0663 D1          	xrl	a,@r1
+1683   0664 C6 6A       	jz	L066A
+1684   0666 D3 06       	xrl	a,#006H
+1685   0668 96 6B       	jnz	L066B
+1686   066A             L066A:
+1687   066A 1A          	inc	r2
+1688   066B             L066B:
+1689   066B B9 5B       	mov	r1,#05BH	;5B may be addr of parm value LSDigit in display buffer 
+1690   066D B8 2B       	mov	r0,#02BH
+1691   066F F0          	mov	a,@r0
+1692   0670 03 72       	add	a,#072H
+1693   0672 B3          	jmpp	@a		;INFO: indirect jump
+1694   0673             
+1695   0673             ;L0673:
+1696   0673 76          	.db	$76	;1
+1697   0674 8A          	.db	$8A	;2
+1698   0675 99          	.db	$99	;3
+1699   0676 FA          	.db	$FA	;4
+1700   0677 D4          	.db	$D4	;5
+1701   0678 DA          	.db	$DA	;6
+1702   0679 53          	.db	$53	;7
+1703   067A 0F          	.db	$0F	;8
+1704   067B D4          	.db	$D4	;9
+1705   067C 84          	.db	$84	;10
+1706   067D 19          	.db	$19	;11
+1707   067E FA          	.db	$FA	;12
+1708   067F 47          	.db	$47	;13
+1709   0680 53          	.db	$53	;14
+1710   0681 0F          	.db	$0F	;15
+1711   0682 C6          	.db	$C6	;16
+1712   0683 88          	.db	$88	;17
+1713   0684             
+1714   0684             
+1715   0684             
+1716   0684             L0684:				;write segs for value in acc to @r1
+1717   0684 03 7A       	add	a,#07AH		;7A is addr of segs table starting with "0"
+1718   0686             L0686:
+1719   0686 14 05       	call	L0005		;read page 0 ROM byte at addr in acc
+1720   0688             L0688:
+1721   0688 A1          	mov	@r1,a		;send out data to display
+1722   0689 83          	ret
+1723   068A             
+1724   068A             
+1725   068A             	
+1726   068A             L068A:
+1727   068A FA          	mov	a,r2
+1728   068B E7          	rl	a
+1729   068C AA          	mov	r2,a
+1730   068D 03 84       	add	a,#084H
+1731   068F 14 05       	call	L0005		;read page 0 ROM byte at addr in acc
+1732   0691 A1          	mov	@r1,a
+1733   0692 19          	inc	r1
+1734   0693 FA          	mov	a,r2
+1735   0694 17          	inc	a
+1736   0695 03 84       	add	a,#084H
+1737   0697 C4 86       	jmp	L0686
+1738   0699             
+1739   0699 FA          	mov	a,r2
+1740   069A 03 8C       	add	a,#08CH
+1741   069C 14 05       	call	L0005		;read page 0 ROM byte at addr in acc
+1742   069E A1          	mov	@r1,a
+1743   069F 19          	inc	r1
+1744   06A0 FA          	mov	a,r2
+1745   06A1 07          	dec	a
+1746   06A2 C6 A7       	jz	L06A7
+1747   06A4 B1 00       	mov	@r1,#000H
+1748   06A6 83          	ret
+1749   06A7             	
+1750   06A7             L06A7:
+1751   06A7 B1 40       	mov	@r1,#040H	;write a dash to LSDigit of parm
+1752   06A9 83          	ret
+1753   06AA             
+1754   06AA             
+1755   06AA             	
+1756   06AA             L06AA:
+1757   06AA 23 F0       	mov	a,#0F0H		;call this addr to calc value of parm in patch buffer, starting at 0x40
+1758   06AC C4 AF       	jmp	L06AF
+1759   06AE             
+1760   06AE             
+1761   06AE             L06AE:				;call this addr to calc value of parm in temp buf (current value)
+1762   06AE 27          	clr	a
+1763   06AF             L06AF:
+1764   06AF B8 29       	mov	r0,#029H	;29 points to byte that holds current parm in temp buf (54 for res)
+1765   06B1 60          	add	a,@r0
+1766   06B2 D4 D3       	call	L06D3		;save acc in r1, set up rotate count from 2C in r7
+1767   06B4 F1          	mov	a,@r1
+1768   06B5 C4 B8       	jmp	L06B8		;skip rotate instr, so shift count is 1 more than number of rotates
+1769   06B7             				;(in case we don't need to rotate at all, then we use 1 as the count)
+1770   06B7             L06B7:
+1771   06B7 77          	rr	a
+1772   06B8             L06B8:
+1773   06B8 EF B7       	djnz	r7,L06B7	;rotate acc right r7 value times
+1774   06BA             
+1775   06BA 50          	anl	a,@r0		;then apply mask at address 2D
+1776   06BB 83          	ret
+1777   06BC             
+1778   06BC             	
+1779   06BC             
+1780   06BC             L06BC:
+1781   06BC AA          	mov	r2,a
+1782   06BD             L06BD:
+1783   06BD D4 D0       	call	L06D0
+1784   06BF F0          	mov	a,@r0
+1785   06C0 5A          	anl	a,r2
+1786   06C1 AA          	mov	r2,a
+1787   06C2             L06C2:
+1788   06C2 F0          	mov	a,@r0
+1789   06C3 37          	cpl	a
+1790   06C4 C4 CA       	jmp	L06CA
+1791   06C6             
+1792   06C6             L06C6:
+1793   06C6 E7          	rl	a
+1794   06C7 2A          	xch	a,r2
+1795   06C8 E7          	rl	a
+1796   06C9 2A          	xch	a,r2
+1797   06CA             L06CA:
+1798   06CA EF C6       	djnz	r7,L06C6
+1799   06CC 51          	anl	a,@r1
+1800   06CD 4A          	orl	a,r2
+1801   06CE A1          	mov	@r1,a
+1802   06CF 83          	ret
+1803   06D0             
+1804   06D0             
+1805   06D0             	
+1806   06D0             L06D0:
+1807   06D0 B8 29       	mov	r0,#029H
+1808   06D2 F0          	mov	a,@r0
+1809   06D3             L06D3:
+1810   06D3 A9          	mov	r1,a		;save acc in r1
+1811   06D4             
+1812   06D4 B8 2C       	mov	r0,#02CH
+1813   06D6 F0          	mov	a,@r0
+1814   06D7 AF          	mov	r7,a		;get right shift count into r7, from 2C
+1815   06D8             
+1816   06D8 18          	inc	r0		;point to 2D next
+1817   06D9 83          	ret
+1818   06DA             
+1819   06DA             
+1820   06DA             	
+1821   06DA             L06DA:
+1822   06DA BA 00       	mov	r2,#000H
+1823   06DC AB          	mov	r3,a
+1824   06DD BF 06       	mov	r7,#006H
+1825   06DF             L06DF:
+1826   06DF FB          	mov	a,r3
+1827   06E0 67          	rrc	a
+1828   06E1 AB          	mov	r3,a
+1829   06E2 E6 EC       	jnc	L06EC
+1830   06E4 FF          	mov	a,r7
+1831   06E5 03 6D       	add	a,#06DH
+1832   06E7 14 05       	call	L0005		;read page 0 ROM byte at addr in acc
+1833   06E9 6A          	add	a,r2
+1834   06EA 57          	da	a
+1835   06EB AA          	mov	r2,a
+1836   06EC             L06EC:
+1837   06EC EF DF       	djnz	r7,L06DF
+1838   06EE FA          	mov	a,r2
+1839   06EF 83          	ret
+1840   06F0             
+1841   06F0             
+1842   06F0             	
+1843   06F0             L06F0:
+1844   06F0 D4 AE       	call	L06AE
+1845   06F2 18          	inc	r0
+1846   06F3 17          	inc	a
+1847   06F4 AA          	mov	r2,a
+1848   06F5 F0          	mov	a,@r0
+1849   06F6 37          	cpl	a
+1850   06F7 6A          	add	a,r2
+1851   06F8 F2 FD       	jb7	L06FD
+1852   06FA F0          	mov	a,@r0
+1853   06FB C4 FE       	jmp	L06FE
+1854   06FD             
+1855   06FD             L06FD:
+1856   06FD FA          	mov	a,r2
+1857   06FE             L06FE:
+1858   06FE C4 BC       	jmp	L06BC
+1859   0700             
+1860   0700             
+1861   0700             
+1862   0700             L0700:				;update Edit LED based on current parm value in tmp buf and value in patch buf
+1863   0700 D4 AE       	call	L06AE		;gets current value of parm in temp buffer at 0x50
+1864   0702 AA          	mov	r2,a
+1865   0703 D4 AA       	call	L06AA		;gets value of parm in patch buffer at 0x40
+1866   0705 DA          	xrl	a,r2		;compare them
+1867   0706             
+1868   0706 B8 5B       	mov	r0,#05BH	;point to value LSDigit in display buffer
+1869   0708 C6 0F       	jz	L070F
+1870   070A 23 80       	mov	a,#080H		;if value has changed, turn on Edit LED
+1871   070C 40          	orl	a,@r0
+1872   070D E4 12       	jmp	L0712
+1873   070F             
+1874   070F             L070F:
+1875   070F 23 7F       	mov	a,#07FH		;otherwise value matches, turn off Edit LED
+1876   0711 50          	anl	a,@r0
+1877   0712             L0712:
+1878   0712 A0          	mov	@r0,a
+1879   0713 83          	ret
+1880   0714             
+1881   0714             
+1882   0714             	
+1883   0714             L0714:				;Write sw pressed?
+1884   0714 D4 AE       	call	L06AE
+1885   0716 07          	dec	a
+1886   0717 F2 1B       	jb7	L071B
+1887   0719 E4 1C       	jmp	L071C
+1888   071B             
+1889   071B             L071B:
+1890   071B 27          	clr	a
+1891   071C             L071C:
+1892   071C C4 BC       	jmp	L06BC
+1893   071E             
+1894   071E             
+1895   071E             L071E:
+1896   071E B8 53       	mov	r0,#053H
+1897   0720 B9 51       	mov	r1,#051H
+1898   0722 85          	clr	f0
+1899   0723 F0          	mov	a,@r0
+1900   0724 53 0C       	anl	a,#00CH
+1901   0726 C6 29       	jz	L0729
+1902   0728 95          	cpl	f0		;set f0 if @r0 is 12-15 dec
+1903   0729             L0729:
+1904   0729 F0          	mov	a,@r0
+1905   072A 53 0F       	anl	a,#00FH
+1906   072C 03 AC       	add	a,#0ACH
+1907   072E 14 05       	call	L0005		;read page 0 ROM byte at addr in acc
+1908   0730             
+1909   0730 21          	xch	a,@r1		;put table low 4 bits in addr51 low 4
+1910   0731 53 F0       	anl	a,#0F0H		;all 	
+1911   0733 41          	orl	a,@r1	
+1912   0734 21          	xch	a,@r1	
+1913   0735             
+1914   0735 19          	inc	r1
+1915   0736 F0          	mov	a,@r0
+1916   0737 47          	swap	a
+1917   0738 53 03       	anl	a,#003H
+1918   073A 03 94       	add	a,#094H
+1919   073C 14 05       	call	L0005		;read page 0 ROM byte at addr in acc
+1920   073E             
+1921   073E 21          	xch	a,@r1
+1922   073F 53 FC       	anl	a,#0FCH
+1923   0741 41          	orl	a,@r1
+1924   0742 21          	xch	a,@r1
+1925   0743             
+1926   0743 B8 59       	mov	r0,#059H
+1927   0745 B9 50       	mov	r1,#050H
+1928   0747 F1          	mov	a,@r1
+1929   0748 77          	rr	a
+1930   0749 47          	swap	a
+1931   074A 53 C0       	anl	a,#0C0H
+1932   074C 40          	orl	a,@r0
+1933   074D E7          	rl	a
+1934   074E E7          	rl	a
+1935   074F 03 98       	add	a,#098H
+1936   0751 14 05       	call	L0005		;read page 0 ROM byte at addr in acc
+1937   0753             
+1938   0753 D5          	sel	rb1
+1939   0754 AD          	mov	r5,a		;set up interval between DCO's * 2, for use as divider table offset
+1940   0755 C5          	sel	rb0
+1941   0756             
+1942   0756 9A BF       	anl	p2,#0BFH	;P26 low to enable IC11 I/O decoder
+1943   0758 BF 02       	mov	r7,#002H
+1944   075A BE 03       	mov	r6,#003H
+1945   075C F1          	mov	a,@r1
+1946   075D B6 61       	jf0	L0761
+1947   075F 53 F8       	anl	a,#0F8H
+1948   0761             L0761:
+1949   0761 D3 18       	xrl	a,#018H
+1950   0763 91          	movx	@r1,a
+1951   0764 E4 6A       	jmp	L076A
+1952   0766             
+1953   0766             L0766:
+1954   0766 BE 03       	mov	r6,#003H
+1955   0768             L0768:
+1956   0768 F1          	mov	a,@r1
+1957   0769 91          	movx	@r1,a		;this was updating the VCF cut bits in the 8255
+1958   076A             L076A:
+1959   076A 19          	inc	r1		;seems like they always just copy 50,51,52,54,55,56,58 in RAM to same addr in hw
+1960   076B EE 68       	djnz	r6,L0768
+1961   076D             
+1962   076D 19          	inc	r1
+1963   076E EF 66       	djnz	r7,L0766
+1964   0770             
+1965   0770 F1          	mov	a,@r1		;copy RAM 58 to hw 58
+1966   0771 91          	movx	@r1,a
+1967   0772             
+1968   0772 8A 40       	orl	p2,#040H	;P26 high to disable IC11 I/O decoder
+1969   0774 83          	ret
+1970   0775             
+1971   0775             
+1972   0775             	
+1973   0775             L0775:				;reset jumps here
+1974   0775 8A FF       	orl	p2,#0FFH
+1975   0777 27          	clr	a
+1976   0778 39          	outl	p1,a
+1977   0779 D7          	mov	psw,a
+1978   077A             
+1979   077A B8 7F       	mov	r0,#07FH
+1980   077C             L077C:				;write 0 to all 128 RAM bytes/registers
+1981   077C A0          	mov	@r0,a
+1982   077D E8 7C       	djnz	r0,L077C
+1983   077F             
+1984   077F 23 80       	mov	a,#080H
+1985   0781 9A BF       	anl	p2,#0BFH	;P26=0, enable IC11 I/O decoder
+1986   0783 B8 53       	mov	r0,#053H	;set all IC42 8255 pins to be outputs
+1987   0785 90          	movx	@r0,a
+1988   0786 B8 57       	mov	r0,#057H	;set all IC28 8255 pins to be outputs
+1989   0788 90          	movx	@r0,a
+1990   0789 B8 5B       	mov	r0,#05BH	;set all IC22 8255 pins to be outputs
+1991   078B 90          	movx	@r0,a
+1992   078C             
+1993   078C BA 36       	mov	r2,#036H
+1994   078E B8 23       	mov	r0,#023H
+1995   0790 BF 04       	mov	r7,#004H
+1996   0792             L0792:
+1997   0792 BB 00       	mov	r3,#000H
+1998   0794 BE 03       	mov	r6,#003H
+1999   0796             L0796:
+2000   0796 FB          	mov	a,r3
+2001   0797 77          	rr	a
+2002   0798 77          	rr	a
+2003   0799 4A          	orl	a,r2
+2004   079A 90          	movx	@r0,a
+2005   079B 1B          	inc	r3
+2006   079C EE 96       	djnz	r6,L0796
+2007   079E             
+2008   079E 28          	xch	a,r0
+2009   079F 03 04       	add	a,#004H
+2010   07A1 28          	xch	a,r0
+2011   07A2 EF 92       	djnz	r7,L0792
+2012   07A4             
+2013   07A4 8A FF       	orl	p2,#0FFH	;disable IC11 I/O decoder
+2014   07A6             
+2015   07A6 23 E8       	mov	a,#0E8H		;point to "PS61" (startup message)
+2016   07A8 F4 D3       	call	L07D3		;displays 4 chars at pg7 addr in acc
+2017   07AA             
+2018   07AA B4 22       	call	L0522
+2019   07AC B8 24       	mov	r0,#024H
+2020   07AE 27          	clr	a
+2021   07AF D4 06       	call	L0606
+2022   07B1             
+2023   07B1 B8 26       	mov	r0,#026H
+2024   07B3 B0 CC       	mov	@r0,#0CCH
+2025   07B5             
+2026   07B5 C8          	dec	r0
+2027   07B6 B0 00       	mov	@r0,#000H
+2028   07B8             
+2029   07B8 F4 1E       	call	L071E
+2030   07BA 55          	strt	t
+2031   07BB 25          	en	tcnti
+2032   07BC 05          	en	i
+2033   07BD B8 25       	mov	r0,#025H
+2034   07BF BF 00       	mov	r7,#000H
+2035   07C1             L07C1:
+2036   07C1 F0          	mov	a,@r0		;read RAM address 0x25
+2037   07C2 F2 C6       	jb7	L07C6
+2038   07C4 E4 C1       	jmp	L07C1
+2039   07C6             
+2040   07C6             L07C6:
+2041   07C6 54 DA       	call	L02DA		;read both switch rows
+2042   07C8 B8 25       	mov	r0,#025H
+2043   07CA B0 00       	mov	@r0,#000H	;clear RAM address 0x25
+2044   07CC EF C1       	djnz	r7,L07C1	;and loop
+2045   07CE             
+2046   07CE 23 24       	mov	a,#024H		;set P12, P15 (program mode)
+2047   07D0 39          	outl	p1,a
+2048   07D1             
+2049   07D1 04 1A       	jmp	L001A		;jump to main loop
+2050   07D3             
+2051   07D3             
+2052   07D3             
+2053   07D3             L07D3:				;displays 4 chars at pg7 addr in acc
+2054   07D3 AA          	mov	r2,a		;save ptr to text in r2
+2055   07D4 B9 5B       	mov	r1,#05BH
+2056   07D6 27          	clr	a
+2057   07D7 A1          	mov	@r1,a		;clear value LSdig in display buffer
+2058   07D8 19          	inc	r1
+2059   07D9 A1          	mov	@r1,a		;clear value MSdig in display buffer
+2060   07DA             
+2061   07DA BF 06       	mov	r7,#006H
+2062   07DC             L07DC:
+2063   07DC 19          	inc	r1
+2064   07DD FA          	mov	a,r2
+2065   07DE A3          	movp	a,@a		;read seg pattern
+2066   07DF A1          	mov	@r1,a		;write it to display
+2067   07E0 1A          	inc	r2
+2068   07E1 EF DC       	djnz	r7,L07DC
+2069   07E3 83          	ret
+2070   07E4             
+2071   07E4             				;some messages:
+2072   07E4             ;L07E4:				;displayed if tape is enabled
+2073   07E4 79          	.db	$79		;E
+2074   07E5 73          	.db	$73		;P
+2075   07E6 77          	.db	$77		;A
+2076   07E7 07          	.db	$07		;T
+2077   07E8             
+2078   07E8             ;L07E8:
+2079   07E8 06          	.db	$06		;1
+2080   07E9 7D          	.db	$7D		;6
+2081   07EA 6D          	.db	$6D		;S
+2082   07EB 73          	.db	$73		;P
+2083   07EC             
+2084   07EC             ;L07EC:
+2085   07EC 79          	.db	$79		;E
+2086   07ED 1D          	.db	$1D		;v
+2087   07EE 77          	.db	$77		;A
+2088   07EF 6D          	.db	$6D		;S
+2089   07F0             
+2090   07F0             ;L07F0:
+2091   07F0 5E          	.db	$5E		;d
+2092   07F1 77          	.db	$77		;A
+2093   07F2 5C          	.db	$5C		;o
+2094   07F3 38          	.db	$38		;L
+2095   07F4             
+2096   07F4             ;L07F4:
+2097   07F4 6E          	.db	$6E		;Y
+2098   07F5 71          	.db	$71		;F
+2099   07F6 50          	.db	$50		;r
+2100   07F7 1D          	.db	$1D		;v
+2101   07F8             
+2102   07F8             :L07F8:
+2103   07F8 00          	.db	$00		
+2104   07F9 50          	.db	$50		;r
+2105   07FA 50          	.db	$50		;r
+2106   07FB 79          	.db	$79		;E
+2107   07FC             
+2108   07FC             ;L07FC:
+2109   07FC 5E          	.db	$5E		;d
+2110   07FD 5C          	.db	$5C		;o
+2111   07FE 5C          	.db	$5C		;o
+2112   07FF 3D          	.db	$3D		;G
+2113   0800             
+2114   0800             .END
+tasm: Number of errors = 0
