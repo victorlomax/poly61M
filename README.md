@@ -33,3 +33,9 @@ SYSEX
 - F0 42 30 7F 10 -- -- -- F7 : Set clock pattern 0
 - ...
 - F0 42 30 7F 1F -- -- -- F7 : Set clock pattern 15
+
+LINKS
+==================================
+8049 Spy, how to dump a 8048/8049: https://www.sbprojects.net/projects/8049spy/index.php
+A low cost MIDI interface for Korg Poly61: http://www.tauntek.com/Poly61.htm
+Bit banging MIDI on ATTiny: https://mitxela.com/projects/midi_on_the_attiny
