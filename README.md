@@ -39,3 +39,4 @@ LINKS
 - 8049 Spy, how to dump a 8048/8049: https://www.sbprojects.net/projects/8049spy/index.php
 - A low cost MIDI interface for Korg Poly61: http://www.tauntek.com/Poly61.htm
 - Bit banging MIDI on ATTiny: https://mitxela.com/projects/midi_on_the_attiny
+- Some nice pictures: http://studiorepair.com/gallery/Korg/Poly-61/index.html
