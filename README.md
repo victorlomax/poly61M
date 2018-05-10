@@ -23,23 +23,41 @@ CLOCK PATTERN
 Up the 19 clock patterns can be selected. Here are the patterns (1 means the clock pulse is played, 0 means the clock pulse is skipped).
 
 1 1 1 1 1 1 1 1
+
 1 1 0 0 0 0 0 0
+
 1 1 0 1 0 0 0 0
+
 1 1 0 1 0 1 0 0
+
 1 1 0 0 1 0 0 0
+
 1 1 0 0 1 1 0 0
+
 1 1 0 0 1 0 1 0
+
 1 1 1 0 0 0 0 0
+
 1 1 1 0 1 0 0 0
+
 1 1 1 0 1 0 1 0
+
 1 1 1 0 1 1 1 0
+
 1 1 1 1 0 0 0 0
+
 1 1 1 1 0 1 0 0
+
 1 1 1 1 0 0 1 0
+
 1 0 1 0 0 1 0 0
+
 1 1 1 1 1 0 0 0
+
 1 1 1 1 1 0 1 0
+
 1 1 1 1 1 1 0 0
+
 1 1 1 1 1 1 1 0
 
 SYSEX
