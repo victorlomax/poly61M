@@ -57,8 +57,11 @@ SYSEX
 PROJECT
 ==================================
 I-Decoding the MIDI EPROM
+<p>
 With the help of two MCP23S17, I decoded the EPROM (2764) containing the MIDI program.
-![Schematic](2764 decoder.png)
+![Schematic](/poly61/2764 decoder.png)
+</p>
+
 LINKS
 ==================================
 - 8049 Spy, how to dump a 8048/8049: https://www.sbprojects.net/projects/8049spy/index.php
