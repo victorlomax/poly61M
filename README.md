@@ -54,6 +54,11 @@ SYSEX
 - ...
 - F0 42 30 7F 1F -- -- -- F7 : Set clock pattern 15
 
+PROJECT
+==================================
+I-Decoding the MIDI EPROM
+With the help of two MCP23S17, I decoded the EPROM (2764) containing the MIDI program.
+
 LINKS
 ==================================
 - 8049 Spy, how to dump a 8048/8049: https://www.sbprojects.net/projects/8049spy/index.php
